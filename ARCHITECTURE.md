@@ -9,58 +9,88 @@ flowchart LR
     V[Upload Validation]
     S[Document Storage]
     DB[(Relational Database)]
-    E[AI Extraction]
-    P[Pydantic Schema Validation]
+    E[InvoiceExtractor]
+    O[OpenAI Responses API]
+    P[Pydantic Structured Output]
     B[Business Validation]
     R[Human Review Queue]
     X[JSON / CSV / API]
 
     U --> API --> V --> S
     S --> DB
-    S -. next milestone .-> E
-    E --> P --> B
+    DB --> E --> O --> P
+    P --> DB
+    P -. Milestone 4 .-> B
     B -->|valid| DB
     B -->|uncertain / invalid| R
     R -->|corrected| DB
     DB --> X
 ```
 
-## Milestone 2 request boundary
+## Milestone 3 extraction boundary
 
 ```text
-UNTRUSTED INPUT                       TRUSTED APPLICATION STATE
+STORED DOCUMENT                     PROVIDER BOUNDARY                     APPLICATION DATA
 
-client filename ─┐
-MIME header ─────┼─> validation ─> UUID storage path ─> Document row
-file bytes ──────┤
-file size ───────┘
+PDF / PNG / JPEG  ──> base64 input ──> AI model ──> strict schema ──> Extraction + LineItem rows
+                                                │
+                                                └── invalid/provider failure -> retry -> controlled failure
 ```
 
-The important boundary is that client-provided upload metadata does not directly control where a file is stored.
+The AI provider performs interpretation. Pydantic defines the acceptable shape and types. SQLAlchemy persists only the validated candidate extraction.
 
 ## Responsibility boundaries
 
 | Component | Responsibility |
 |---|---|
-| API | Receive requests, translate expected failures into HTTP responses |
+| Document API | Upload and retrieve safe document metadata |
 | Storage service | Sanitize names, validate type, enforce size, persist bytes |
-| Document schema | Define public document metadata returned by the API |
-| Database session dependency | Provide one SQLAlchemy session per request |
-| Database | Persist document, extraction, review, and final state |
-| AI extraction | Convert unstructured content into candidate structured data |
-| Pydantic validation | Enforce extraction structure and field types |
-| Business validation | Enforce deterministic invoice rules |
-| Human review | Resolve uncertain or invalid extractions |
-| Export | Make reliable structured data available downstream |
+| Extraction API | Coordinate extraction status, persistence, and HTTP errors |
+| InvoiceExtractor | Encode the stored file, call the provider, require structured output, retry transient failures |
+| Extraction Pydantic schema | Define exactly what structurally valid invoice output looks like |
+| Database | Persist documents, candidate extractions, line items, reviews, and status |
+| Business validation | Milestone 4: totals, required fields, currency validity, dates, confidence thresholds |
+| Human review | Milestone 5: correct uncertain/invalid extractions without losing the original AI result |
 
-## Upload consistency rule
+## Why provider code is isolated
 
-A successful upload should produce both:
+Provider APIs change more often than the invoice domain model. Keeping the OpenAI request inside `InvoiceExtractor` means a future provider swap should primarily affect one service instead of leaking provider-specific response objects across routes and database code.
 
 ```text
-stored file + database Document row
+FastAPI route -> InvoiceExtractor interface -> provider SDK
+                     |
+                     +-> AIExtractionResult -> persistence
 ```
 
-If file validation fails, neither should exist.
+## Retry boundary
 
-If the file is written but database persistence fails, the route removes the stored file. This is a small compensation step that keeps local storage and database metadata synchronized without introducing a more complex distributed transaction system.
+`AI_MAX_ATTEMPTS` controls the maximum number of extraction attempts.
+
+A retry is appropriate for provider/transport failures or a provider response that cannot be parsed into the required schema. A missing API key is a configuration error and is not retried.
+
+The current retry policy is intentionally simple. Exponential backoff and provider-specific error classification can be added when deployment requirements justify them.
+
+## Structural validation vs business validation
+
+These are deliberately different layers.
+
+### Structural validation
+
+Examples:
+
+- `invoice_date` must parse as a date;
+- `confidence` must be between 0 and 1;
+- line items must contain the expected keys;
+- unexpected fields are rejected.
+
+### Business validation
+
+Examples reserved for Milestone 4:
+
+- `subtotal + tax ≈ total`;
+- line items add up to subtotal;
+- invoice number is present;
+- currency is an allowed ISO code;
+- low confidence requires human review.
+
+A payload can pass structural validation while failing business validation. That distinction is central to reliable AI workflows.

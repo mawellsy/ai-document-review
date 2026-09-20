@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     ai_provider: str = "openai"
     ai_model: str = "replace-with-document-capable-model"
     ai_api_key: str = ""
+    ai_max_attempts: int = Field(default=2, ge=1, le=5)
 
     model_config = SettingsConfigDict(
         env_file=".env",

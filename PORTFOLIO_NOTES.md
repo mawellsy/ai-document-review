@@ -113,3 +113,59 @@ Why: arithmetic, required fields, dates, and allowed currency codes are ordinary
 - Milestone 1: complete
 - Milestone 2: complete
 - Milestone 3: next
+
+## Milestone 3 additions
+
+### Skills demonstrated
+
+- multimodal/document-capable AI API integration
+- strict Pydantic structured output
+- provider adapter/service boundaries
+- base64 image and PDF request construction
+- configurable retry behavior
+- persistence of AI candidate data and line items
+- processing-status transitions
+- mocking an external AI provider in unit/API tests
+- separating probabilistic extraction from deterministic validation
+
+### Architectural decisions
+
+#### Require typed structured output
+
+The extraction service requests a Pydantic-defined result rather than asking the model for loose JSON and manually decoding it later.
+
+Why: application code receives a validated object with known fields and types. Unexpected keys, malformed dates, invalid confidence ranges, and malformed line items fail before persistence.
+
+#### Keep business validation out of the extraction service
+
+Milestone 3 verifies structure. Milestone 4 verifies invoice truth conditions such as arithmetic and allowed currency codes.
+
+Why: "valid JSON" and "valid business record" are different claims and should have different tests and failure handling.
+
+#### Mock the AI provider in automated tests
+
+Tests inject a fake client/extractor instead of calling a live model.
+
+Why: tests remain deterministic, fast, offline, and free of API charges. Live-provider smoke tests can be separate and opt-in later.
+
+#### Record the model used
+
+Every extraction persists `model_used` and the structured candidate response.
+
+Why: model versions can change output behavior. Recording the model improves debugging and auditability.
+
+### Demo moments added
+
+- upload `invoice_001.png`;
+- call `POST /documents/{id}/extractions`;
+- show typed invoice JSON returned and persisted;
+- retrieve it through `/extractions/latest`;
+- demonstrate a mocked provider failure test and `extraction_failed` status;
+- point out that arithmetic validation is intentionally a separate next step.
+
+## Milestone status
+
+- Milestone 1: complete
+- Milestone 2: complete
+- Milestone 3: complete
+- Milestone 4: next

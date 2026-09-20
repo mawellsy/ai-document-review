@@ -204,3 +204,150 @@ Be comfortable explaining:
 - retryable vs non-retryable AI failures
 - mocking external APIs in tests
 - why model name and raw response should be recorded for auditability
+
+# Milestone 3 concepts
+
+## 13. Probabilistic extraction vs deterministic validation
+
+An LLM is probabilistic: the same conceptual task can produce different outputs, and a plausible output can still be wrong.
+
+Pydantic validation is deterministic: the same input is checked against the same explicit rules every time.
+
+```text
+invoice image
+    ↓
+LLM interpretation        probabilistic
+    ↓
+Pydantic schema           deterministic structure check
+    ↓
+Milestone 4 rules         deterministic business check
+```
+
+The LLM should do the work that requires interpretation. Ordinary software should enforce rules that can be stated exactly.
+
+## 14. Structured output
+
+Structured output means the model is constrained to return data matching a defined schema rather than free-form prose.
+
+For this project the schema is `InvoiceExtractionPayload`.
+
+Benefits:
+
+- predictable keys;
+- typed dates and numbers;
+- bounded confidence value;
+- rejection of unexpected fields;
+- less manual JSON parsing code;
+- easier persistence and testing.
+
+Important limitation: schema validity does not prove factual correctness. A model can return a valid `total: 210.00` even if the invoice visibly says `201.00`.
+
+## 15. Pydantic `extra="forbid"`
+
+By default, silently accepting unexpected model fields can hide provider drift or prompt mistakes.
+
+`extra="forbid"` means:
+
+```text
+expected schema + unexpected key -> validation failure
+```
+
+That is useful at an AI boundary because the application should notice when the provider returns data outside the agreed contract.
+
+## 16. Why images and PDFs use different provider inputs
+
+A PNG/JPEG is sent as an image input.
+
+```text
+bytes -> base64 -> data:image/... -> input_image
+```
+
+A PDF is sent as a file input.
+
+```text
+bytes -> base64 -> data:application/pdf -> input_file
+```
+
+The service hides those provider-specific details from the route.
+
+## 17. Service adapter pattern
+
+`InvoiceExtractor` acts as an adapter between application concepts and the provider SDK.
+
+```text
+Application concept: "extract this invoice"
+                ↓
+InvoiceExtractor
+                ↓
+Provider-specific request/response API
+```
+
+The route does not need to know how base64 inputs, `responses.parse`, or provider response objects work.
+
+This reduces coupling and makes mocking straightforward.
+
+## 18. Retryable failures
+
+External APIs fail for reasons your code does not control:
+
+- temporary network problems;
+- transient provider errors;
+- malformed/invalid structured output.
+
+A small retry count can recover from transient failures.
+
+```text
+attempt 1 -> failure
+attempt 2 -> success
+```
+
+But configuration mistakes such as a missing API key are not transient. Retrying the same missing credential merely performs the same failure with admirable persistence and no useful result.
+
+The current project uses a simple maximum-attempt policy. More advanced production systems may add exponential backoff and error-specific retry rules.
+
+## 19. Why AI calls are mocked in tests
+
+A unit test should answer whether *our code* behaves correctly.
+
+Calling a live model introduces unrelated variables:
+
+- network availability;
+- provider uptime;
+- API cost;
+- model updates;
+- nondeterministic output.
+
+So tests inject fake provider responses:
+
+```text
+fake failure -> fake success
+```
+
+and verify that our retry logic behaves correctly.
+
+A separate optional integration/smoke test can later verify real provider connectivity without making the core test suite unreliable.
+
+## 20. Processing status as workflow state
+
+The document status now moves through states such as:
+
+```text
+uploaded -> extracting -> extracted
+                      \
+                       -> extraction_failed
+```
+
+This is a small state machine. The status tells other parts of the system what has happened and what actions are valid next.
+
+Later milestones will add states related to validation and review.
+
+## Study before Milestone 4
+
+Be able to explain:
+
+- the difference between structural validation and business validation;
+- why `subtotal + tax ≈ total` belongs in Python rather than the prompt;
+- decimal/tolerance issues in monetary comparisons;
+- how confidence thresholds should route work rather than prove correctness;
+- why validation errors should be stored as structured data;
+- how a document transitions from extracted candidate data to accepted or review-required data.

@@ -1,6 +1,6 @@
 # AI Document Extraction & Human Review Pipeline
 
-A portfolio project demonstrating production-style AI document processing with Python, FastAPI, Pydantic, SQLAlchemy, SQLite, structured extraction, deterministic validation, and human-in-the-loop review.
+A portfolio project demonstrating production-style AI document processing with Python, FastAPI, Pydantic, SQLAlchemy, SQLite, structured AI extraction, deterministic validation, and human-in-the-loop review.
 
 ## Business problem
 
@@ -8,73 +8,75 @@ A fictional company manually copies invoice data into internal systems. Manual e
 
 ## Current scope
 
-**Milestone 2 complete: Document upload API**
+**Milestone 3 complete: AI extraction**
 
 Implemented so far:
 
-- maintainable Python application structure
+- maintainable Python/FastAPI application structure
 - environment-based configuration
 - SQLAlchemy database foundation
 - `Document`, `Extraction`, `LineItem`, and `Review` models
 - synthetic invoice fixtures
-- Mermaid architecture documentation
-- `POST /documents`
-- `GET /documents/{id}`
-- `GET /documents`
-- streamed file storage
-- UUID-based stored filenames
-- client-filename sanitization
-- PDF, PNG, JPG, and JPEG allow-list
-- file-signature validation
-- extension/content consistency checks
-- configurable upload-size limit
-- persistent upload metadata
-- automated happy-path and failure-path tests
+- safe PDF/PNG/JPEG upload and local storage
+- UUID-based document identity
+- upload size and file-signature validation
+- `POST /documents`, `GET /documents/{id}`, and `GET /documents`
+- strict Pydantic schema for AI invoice output
+- OpenAI Responses API adapter for image and PDF inputs
+- structured-output parsing instead of manual JSON parsing
+- configurable retry limit for provider/structured-output failures
+- persisted extraction metadata and line items
+- `POST /documents/{id}/extractions`
+- `GET /documents/{id}/extractions/latest`
+- mocked AI tests with no live API calls
 - portfolio and learning notes
 
 Not implemented yet:
 
-- AI extraction
-- strict Pydantic extraction schema
-- business-rule validation
+- deterministic invoice business-rule validation
+- automatic review routing
 - human review endpoints
 - export
 
-Those are later milestones. Keeping them separate makes each layer independently understandable and testable, a rare outbreak of restraint in software development.
+Those remain separate milestones so structural AI validation is not confused with deterministic business rules.
 
 ## Architecture
 
 ```mermaid
 flowchart TD
     A[API Client] --> B[POST /documents]
-    B --> C[Filename Sanitization]
-    C --> D[Signature + Format Validation]
-    D --> E[Streaming Size Check]
-    E --> F[UUID-based Local Storage]
-    F --> G[(Document Metadata in SQLite)]
-    G --> H[GET /documents]
-    G --> I[GET /documents/id]
-
-    F -. Milestone 3 .-> J[AI Extraction]
-    J --> K[Strict Pydantic Schema]
-    K -. Milestone 4 .-> L[Business Validation]
-    L -->|Pass| M[(Reliable Structured Data)]
-    L -->|Review| N[Human Review Queue]
+    B --> C[Upload Validation]
+    C --> D[UUID File Storage]
+    D --> E[(Document Metadata)]
+    E --> F[POST /documents/id/extractions]
+    F --> G[InvoiceExtractor]
+    G --> H[OpenAI Responses API]
+    H --> I[Strict Pydantic Invoice Schema]
+    I --> J[(Extraction + Line Items)]
+    J -. Milestone 4 .-> K[Deterministic Business Validation]
+    K -->|Pass| L[Reliable Structured Data]
+    K -->|Review| M[Human Review Queue]
 ```
 
-### Design principle
-
-The uploaded file and its metadata are persisted before AI processing is introduced. This creates a stable boundary:
+### Current trust boundary
 
 ```text
-untrusted HTTP upload
-        ↓
-validated stored document
-        ↓
-future AI processing
+untrusted document
+      ↓
+upload validation
+      ↓
+stored document
+      ↓
+probabilistic AI extraction
+      ↓
+strict Pydantic structure validation
+      ↓
+persisted candidate extraction
+      ↓
+Milestone 4: deterministic business validation
 ```
 
-AI extraction should consume an already identified, validated document rather than being tangled into the upload request.
+The model is allowed to interpret the document. It is not allowed to define the application's data contract.
 
 ## Repository structure
 
@@ -82,24 +84,24 @@ AI extraction should consume an already identified, validated document rather th
 ai-document-review-pipeline/
 ├── app/
 │   ├── api/
-│   │   └── documents.py       # upload and retrieval routes
+│   │   ├── documents.py       # upload and document retrieval
+│   │   └── extractions.py     # run/retrieve AI extraction
 │   ├── core/
-│   │   └── config.py          # environment-backed settings
+│   │   └── config.py
 │   ├── db/
-│   │   ├── base.py
-│   │   └── session.py         # engine, session factory, request dependency
-│   ├── models/                # SQLAlchemy entities
+│   ├── models/
 │   ├── schemas/
-│   │   └── document.py        # public document response schema
+│   │   ├── document.py
+│   │   └── extraction.py      # strict AI + API schemas
 │   ├── services/
-│   │   └── storage.py         # upload validation and safe persistence
+│   │   ├── storage.py
+│   │   └── extraction.py      # provider adapter + retry behavior
 │   └── main.py
 ├── sample_invoices/
 ├── scripts/
-├── storage/uploads/           # runtime files; ignored by Git
+├── storage/uploads/
 ├── tests/
 ├── .env.example
-├── .gitignore
 ├── ARCHITECTURE.md
 ├── LEARNING_NOTES.md
 ├── PORTFOLIO_NOTES.md
@@ -108,45 +110,9 @@ ai-document-review-pipeline/
 └── README.md
 ```
 
-## Milestone 2 request flow
+## API workflow
 
-```text
-multipart upload
-     ↓
-remove client-supplied path components
-     ↓
-read signature bytes
-     ↓
-verify PDF / PNG / JPEG
-     ↓
-verify extension + MIME consistency
-     ↓
-stream to storage while enforcing size limit
-     ↓
-write Document metadata inside DB transaction
-     ↓
-return API-safe metadata
-```
-
-The original filename is kept only as metadata. The actual stored filename is generated from the document UUID, so a filename supplied by a client never determines the server-side storage path.
-
-## Supported upload formats
-
-| Format | Extensions | Canonical MIME type |
-|---|---|---|
-| PDF | `.pdf` | `application/pdf` |
-| PNG | `.png` | `image/png` |
-| JPEG | `.jpg`, `.jpeg` | `image/jpeg` |
-
-The application checks signature bytes instead of trusting the request header alone. This is intentionally lightweight file-type validation for the portfolio stage, not a claim that arbitrary hostile uploads are completely safe.
-
-## API endpoints
-
-### `POST /documents`
-
-Uploads one document and returns persisted metadata.
-
-Example:
+### 1. Upload an invoice
 
 ```bash
 curl -X POST \
@@ -154,53 +120,93 @@ curl -X POST \
   http://127.0.0.1:8000/documents
 ```
 
-Example response:
+The response contains a document UUID. The stored file has already passed the Milestone 2 upload checks.
 
-```json
-{
-  "id": "<uuid>",
-  "original_filename": "invoice_001.png",
-  "content_type": "image/png",
-  "file_size_bytes": 12345,
-  "processing_status": "uploaded",
-  "uploaded_at": "2026-09-20T00:00:00Z"
-}
-```
-
-### `GET /documents/{id}`
-
-Returns metadata for one stored document. Missing IDs return `404`.
-
-### `GET /documents`
-
-Returns documents newest-first. Supports:
-
-- `limit`: 1 to 100, default 50
-- `offset`: zero or greater
-
-Example:
+### 2. Extract invoice data
 
 ```bash
-curl "http://127.0.0.1:8000/documents?limit=20&offset=0"
+curl -X POST \
+  http://127.0.0.1:8000/documents/<DOCUMENT_ID>/extractions
 ```
+
+The extraction endpoint:
+
+1. marks the document `extracting`;
+2. sends the stored PDF/image to the configured AI model;
+3. requires output matching `InvoiceExtractionPayload`;
+4. retries provider/structured-output failures up to `AI_MAX_ATTEMPTS`;
+5. persists the extraction and line items;
+6. marks the document `extracted`;
+7. returns the persisted structured result.
+
+If all attempts fail, the document becomes `extraction_failed` and the API returns `502`. Missing AI configuration returns `503`.
+
+### 3. Read the latest extraction
+
+```bash
+curl \
+  http://127.0.0.1:8000/documents/<DOCUMENT_ID>/extractions/latest
+```
+
+## Strict extraction schema
+
+The AI is asked for these invoice fields:
+
+```text
+invoice_number
+invoice_date
+vendor_name
+vendor_address
+customer_name
+subtotal
+tax
+total
+currency
+due_date
+line_items[]
+confidence
+```
+
+Each line item requires:
+
+```text
+description
+quantity
+unit_price
+amount
+```
+
+Pydantic rejects unexpected fields, invalid dates, negative numeric values, malformed line items, and confidence outside `0..1`. Currency is normalized to uppercase. Whether a currency code is actually valid ISO currency, or whether totals mathematically reconcile, belongs to Milestone 4.
+
+## AI-provider boundary
+
+`app/services/extraction.py` is the only component that knows how the provider request is constructed.
+
+For PNG/JPEG it sends a base64 `input_image`. For PDF it sends a base64 `input_file`. The service requests typed structured output using the Pydantic extraction model.
+
+The rest of the application receives an `AIExtractionResult`, not arbitrary provider JSON. This keeps the API and database layers insulated from provider-specific response objects.
 
 ## Configuration
 
-Copy the example environment file:
+Copy the example file:
 
 ```bash
 cp .env.example .env
 ```
 
-Important settings:
+Configure at least:
 
 ```text
 DATABASE_URL=sqlite:///./document_review.db
 UPLOAD_DIR=storage/uploads
 MAX_UPLOAD_MB=10
+AI_PROVIDER=openai
+AI_MODEL=<document-capable-model>
+AI_API_KEY=<your-api-key>
+AI_MAX_ATTEMPTS=2
 ```
 
-Secrets belong in `.env`, which is excluded from version control.
+Never commit `.env` or a real API key.
 
 ## Local setup
 
@@ -208,34 +214,16 @@ Python 3.11+ is recommended.
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate          # macOS/Linux
-# .venv\Scripts\activate          # Windows PowerShell
-
+source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-Initialize the database:
-
-```bash
 python -m scripts.init_db
-```
-
-Run the API:
-
-```bash
 uvicorn app.main:app --reload
 ```
 
-Interactive API documentation is available at:
+Interactive documentation:
 
 ```text
 http://127.0.0.1:8000/docs
-```
-
-Health check:
-
-```text
-http://127.0.0.1:8000/health
 ```
 
 ## Tests
@@ -244,66 +232,31 @@ http://127.0.0.1:8000/health
 pytest -q
 ```
 
-Milestone 2 currently verifies:
+Milestone 3 adds coverage for:
 
-1. safe local configuration;
-2. expected database tables;
-3. health endpoint;
-4. successful document upload;
-5. persisted file storage;
-6. single-document retrieval;
-7. document listing;
-8. removal of client-supplied path components;
-9. rejection of unsupported content;
-10. rejection of extension/content mismatches;
-11. upload-size enforcement;
-12. `404` behavior for missing documents.
+- strict invoice schema validation;
+- currency normalization;
+- rejection of unexpected AI fields;
+- image input construction;
+- PDF input construction;
+- retry-then-success behavior;
+- exhausted retry behavior;
+- extraction persistence;
+- line-item persistence;
+- extraction status transitions;
+- latest-extraction retrieval;
+- mocked provider failure.
 
-## Failure behavior
+The test suite does **not** call a live AI API. Provider behavior is mocked so tests remain fast, deterministic, and free of API cost.
 
-| Failure | HTTP response | Result |
-|---|---:|---|
-| unsupported/invalid file | `415` | nothing persisted |
-| extension/content mismatch | `415` | nothing persisted |
-| file above configured limit | `413` | partial file deleted |
-| database persistence failure | `500` | stored file deleted |
-| unknown document ID | `404` | no state change |
+## Milestone boundary
 
-Cleaning up the file after a database failure prevents a common consistency bug: a file existing on disk with no corresponding database record.
+Milestone 3 answers:
 
-## Synthetic test data
+> Can the system turn a stored invoice into structurally valid candidate data and preserve it reliably?
 
-`sample_invoices/invoice_001.png` is a fake invoice suitable for upload demonstrations.
+Milestone 4 will answer:
 
-`invoice_001.json` contains expected structured values for future extraction tests.
+> Is that candidate data internally consistent and safe to accept automatically?
 
-`invoice_002_needs_review.json` deliberately contains an incorrect total. It will later prove that deterministic validation can override plausible AI output and route a document to review.
-
-## Planned milestones
-
-1. **Architecture and repository** — complete.
-2. **Document upload API** — complete.
-3. **AI extraction** — strict structured output, extraction service, retries, mocked tests.
-4. **Business validation** — totals, dates, currencies, required fields, confidence.
-5. **Human review queue** — review/correction APIs and authoritative corrected results.
-6. **Export** — JSON, CSV, API retrieval.
-7. **Portfolio polish** — screenshots, demo script, technical and business explanation.
-
-## Security posture
-
-- no real customer or invoice data
-- no committed API keys
-- runtime upload directory excluded from Git
-- generated server-side filenames
-- client path components stripped from original filenames
-- allow-listed file formats
-- signature-based content checks
-- configurable upload-size limit
-- partial files removed when validation/storage fails
-- stored file removed if its database transaction fails
-
-Future production hardening could add malware scanning, object storage, stricter document parsing, authentication, rate limits, and reverse-proxy request limits. They are deliberately not being added before the portfolio workflow requires them.
-
-## Portfolio thesis
-
-This project is not meant to prove that an LLM can read an invoice in a demo. Many demos can do that. It is meant to prove that an AI extraction workflow can be **validated, traced, corrected, and integrated into ordinary business software** without blindly trusting the model.
+Keeping those questions separate is important. An AI response can be perfectly valid JSON and still contain a mathematically wrong invoice total.
