@@ -1,0 +1,29 @@
+from functools import lru_cache
+from pathlib import Path
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """Application configuration loaded from environment variables or .env."""
+
+    app_name: str = "AI Document Review Pipeline"
+    app_env: str = "development"
+    database_url: str = "sqlite:///./document_review.db"
+    upload_dir: Path = Path("storage/uploads")
+    max_upload_mb: int = Field(default=10, ge=1, le=50)
+    ai_provider: str = "openai"
+    ai_model: str = "replace-with-document-capable-model"
+    ai_api_key: str = ""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

@@ -1,0 +1,17 @@
+{
+  "invoice_number": "INV-2026-002",
+  "invoice_date": "2026-09-16",
+  "vendor_name": "Beacon Maintenance Parts",
+  "vendor_address": "47 Synthetic Road, Harbor City",
+  "customer_name": "Acme Field Services",
+  "subtotal": 410.00,
+  "tax": 20.50,
+  "total": 460.50,
+  "currency": "USD",
+  "due_date": "2026-10-16",
+  "line_items": [
+    {"description": "Replacement filter", "quantity": 10, "unit_price": 25.00, "amount": 250.00},
+    {"description": "Drive belt", "quantity": 4, "unit_price": 40.00, "amount": 160.00}
+  ],
+  "intentional_test_issue": "subtotal + tax does not equal total; should route to review"
+}

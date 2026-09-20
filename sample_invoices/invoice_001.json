@@ -1,0 +1,16 @@
+{
+  "invoice_number": "INV-2026-001",
+  "invoice_date": "2026-09-15",
+  "vendor_name": "Northstar Office Supplies",
+  "vendor_address": "125 Example Avenue, Harbor City",
+  "customer_name": "Acme Field Services",
+  "subtotal": 245.00,
+  "tax": 12.25,
+  "total": 257.25,
+  "currency": "USD",
+  "due_date": "2026-10-15",
+  "line_items": [
+    {"description": "Printer paper cartons", "quantity": 5, "unit_price": 35.00, "amount": 175.00},
+    {"description": "Archive folders", "quantity": 10, "unit_price": 7.00, "amount": 70.00}
+  ]
+}
