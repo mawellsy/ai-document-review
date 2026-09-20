@@ -49,6 +49,14 @@ class LineItemResponse(BaseModel):
     amount: Decimal
 
 
+class ValidationIssueResponse(BaseModel):
+    code: str
+    field: str | None
+    message: str
+    observed: object | None = None
+    expected: object | None = None
+
+
 class ExtractionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -67,5 +75,6 @@ class ExtractionResponse(BaseModel):
     model_used: str
     ai_confidence: Decimal | None
     review_required: bool
+    validation_errors: list[ValidationIssueResponse]
     created_at: datetime
     line_items: list[LineItemResponse]

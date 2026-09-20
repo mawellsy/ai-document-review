@@ -1,6 +1,6 @@
 # AI Document Extraction & Human Review Pipeline
 
-A portfolio project demonstrating production-style AI document processing with Python, FastAPI, Pydantic, SQLAlchemy, SQLite, structured AI extraction, deterministic validation, and human-in-the-loop review.
+A portfolio project demonstrating production-style AI document processing with Python, FastAPI, Pydantic, SQLAlchemy, SQLite, structured AI extraction, deterministic business validation, and human-in-the-loop review.
 
 ## Business problem
 
@@ -8,7 +8,7 @@ A fictional company manually copies invoice data into internal systems. Manual e
 
 ## Current scope
 
-**Milestone 3 complete: AI extraction**
+**Milestone 4 complete: deterministic business validation**
 
 Implemented so far:
 
@@ -26,19 +26,21 @@ Implemented so far:
 - structured-output parsing instead of manual JSON parsing
 - configurable retry limit for provider/structured-output failures
 - persisted extraction metadata and line items
-- `POST /documents/{id}/extractions`
-- `GET /documents/{id}/extractions/latest`
+- deterministic invoice business validation
+- configurable confidence and monetary tolerance thresholds
+- ISO 4217 currency-code checking
+- structured validation errors persisted with each extraction
+- automatic `validated` vs `review_required` routing state
 - mocked AI tests with no live API calls
 - portfolio and learning notes
 
 Not implemented yet:
 
-- deterministic invoice business-rule validation
-- automatic review routing
-- human review endpoints
+- human review endpoints and correction workflow
+- authoritative corrected-record handling
 - export
 
-Those remain separate milestones so structural AI validation is not confused with deterministic business rules.
+Those remain separate milestones so the review workflow can build on already-persisted validation evidence rather than mixing extraction, validation, and correction into one oversized route.
 
 ## Architecture
 
@@ -50,15 +52,17 @@ flowchart TD
     D --> E[(Document Metadata)]
     E --> F[POST /documents/id/extractions]
     F --> G[InvoiceExtractor]
-    G --> H[OpenAI Responses API]
-    H --> I[Strict Pydantic Invoice Schema]
-    I --> J[(Extraction + Line Items)]
-    J -. Milestone 4 .-> K[Deterministic Business Validation]
-    K -->|Pass| L[Reliable Structured Data]
-    K -->|Review| M[Human Review Queue]
+    G --> H[AI Provider]
+    H --> I[Strict Pydantic Schema]
+    I --> J[InvoiceBusinessValidator]
+    J -->|PASS| K[validated]
+    J -->|REVIEW| L[review_required]
+    K --> M[(Extraction + Line Items)]
+    L --> M
+    L -. Milestone 5 .-> N[Human Review Queue]
 ```
 
-### Current trust boundary
+### Trust boundary
 
 ```text
 untrusted document
@@ -71,12 +75,12 @@ probabilistic AI extraction
       ↓
 strict Pydantic structure validation
       ↓
-persisted candidate extraction
-      ↓
-Milestone 4: deterministic business validation
+deterministic business validation
+      ├── pass   -> validated
+      └── issues -> review_required
 ```
 
-The model is allowed to interpret the document. It is not allowed to define the application's data contract.
+The model interprets the document. Python defines whether the resulting candidate data is acceptable for automatic processing.
 
 ## Repository structure
 
@@ -84,18 +88,19 @@ The model is allowed to interpret the document. It is not allowed to define the 
 ai-document-review-pipeline/
 ├── app/
 │   ├── api/
-│   │   ├── documents.py       # upload and document retrieval
-│   │   └── extractions.py     # run/retrieve AI extraction
+│   │   ├── documents.py
+│   │   └── extractions.py
 │   ├── core/
 │   │   └── config.py
 │   ├── db/
 │   ├── models/
 │   ├── schemas/
 │   │   ├── document.py
-│   │   └── extraction.py      # strict AI + API schemas
+│   │   └── extraction.py
 │   ├── services/
 │   │   ├── storage.py
-│   │   └── extraction.py      # provider adapter + retry behavior
+│   │   ├── extraction.py
+│   │   └── validation.py
 │   └── main.py
 ├── sample_invoices/
 ├── scripts/
@@ -120,26 +125,19 @@ curl -X POST \
   http://127.0.0.1:8000/documents
 ```
 
-The response contains a document UUID. The stored file has already passed the Milestone 2 upload checks.
-
-### 2. Extract invoice data
+### 2. Extract and validate invoice data
 
 ```bash
 curl -X POST \
   http://127.0.0.1:8000/documents/<DOCUMENT_ID>/extractions
 ```
 
-The extraction endpoint:
+The endpoint now performs two different kinds of validation:
 
-1. marks the document `extracting`;
-2. sends the stored PDF/image to the configured AI model;
-3. requires output matching `InvoiceExtractionPayload`;
-4. retries provider/structured-output failures up to `AI_MAX_ATTEMPTS`;
-5. persists the extraction and line items;
-6. marks the document `extracted`;
-7. returns the persisted structured result.
+1. **Structural validation:** Pydantic checks types, dates, allowed fields, numeric ranges, and line-item shape.
+2. **Business validation:** ordinary Python checks whether the structurally valid data makes business sense.
 
-If all attempts fail, the document becomes `extraction_failed` and the API returns `502`. Missing AI configuration returns `503`.
+A successful extraction therefore does **not** automatically mean the invoice is trusted.
 
 ### 3. Read the latest extraction
 
@@ -148,43 +146,65 @@ curl \
   http://127.0.0.1:8000/documents/<DOCUMENT_ID>/extractions/latest
 ```
 
-## Strict extraction schema
+The response includes:
 
-The AI is asked for these invoice fields:
-
-```text
-invoice_number
-invoice_date
-vendor_name
-vendor_address
-customer_name
-subtotal
-tax
-total
-currency
-due_date
-line_items[]
-confidence
+```json
+{
+  "review_required": false,
+  "validation_errors": []
+}
 ```
 
-Each line item requires:
+An inconsistent invoice can instead return:
 
-```text
-description
-quantity
-unit_price
-amount
+```json
+{
+  "review_required": true,
+  "validation_errors": [
+    {
+      "code": "invoice_total_mismatch",
+      "field": "total",
+      "message": "Subtotal plus tax does not approximately equal total.",
+      "observed": "999.00",
+      "expected": "210.00"
+    }
+  ]
+}
 ```
 
-Pydantic rejects unexpected fields, invalid dates, negative numeric values, malformed line items, and confidence outside `0..1`. Currency is normalized to uppercase. Whether a currency code is actually valid ISO currency, or whether totals mathematically reconcile, belongs to Milestone 4.
+The original AI extraction remains persisted even when review is required. Milestone 5 will let a human correct it without destroying the original candidate data.
 
-## AI-provider boundary
+## Business validation rules
 
-`app/services/extraction.py` is the only component that knows how the provider request is constructed.
+`InvoiceBusinessValidator` currently checks:
 
-For PNG/JPEG it sends a base64 `input_image`. For PDF it sends a base64 `input_file`. The service requests typed structured output using the Pydantic extraction model.
+- required auto-accept fields are present;
+- at least one line item exists;
+- currency is an assigned transactional ISO 4217 code;
+- AI confidence meets `AI_CONFIDENCE_THRESHOLD`;
+- due date is not earlier than invoice date;
+- `subtotal + tax` approximately equals `total`;
+- each line item's `quantity × unit_price` approximately equals its `amount`;
+- line-item amounts approximately sum to `subtotal`.
 
-The rest of the application receives an `AIExtractionResult`, not arbitrary provider JSON. This keeps the API and database layers insulated from provider-specific response objects.
+Money comparisons use decimal arithmetic and a configurable tolerance instead of exact floating-point equality.
+
+## Processing states
+
+```text
+uploaded
+   ↓
+extracting
+   ├── provider/schema failure -> extraction_failed
+   ↓
+AI candidate extracted
+   ↓
+business validation
+   ├── no issues -> validated
+   └── issues    -> review_required
+```
+
+Milestone 5 will turn `review_required` into an actual human review queue and correction workflow.
 
 ## Configuration
 
@@ -194,7 +214,7 @@ Copy the example file:
 cp .env.example .env
 ```
 
-Configure at least:
+Configure as needed:
 
 ```text
 DATABASE_URL=sqlite:///./document_review.db
@@ -204,6 +224,8 @@ AI_PROVIDER=openai
 AI_MODEL=<document-capable-model>
 AI_API_KEY=<your-api-key>
 AI_MAX_ATTEMPTS=2
+AI_CONFIDENCE_THRESHOLD=0.80
+AMOUNT_TOLERANCE=0.01
 ```
 
 Never commit `.env` or a real API key.
@@ -232,31 +254,28 @@ http://127.0.0.1:8000/docs
 pytest -q
 ```
 
-Milestone 3 adds coverage for:
+Milestone 4 adds tests for:
 
-- strict invoice schema validation;
-- currency normalization;
-- rejection of unexpected AI fields;
-- image input construction;
-- PDF input construction;
-- retry-then-success behavior;
-- exhausted retry behavior;
-- extraction persistence;
-- line-item persistence;
-- extraction status transitions;
-- latest-extraction retrieval;
-- mocked provider failure.
+- clean invoices passing validation;
+- missing required fields;
+- invalid ISO currency codes;
+- low AI confidence;
+- invoice-total mismatches;
+- line-item subtotal mismatches;
+- line-item quantity/price mismatches;
+- invalid invoice/due-date chronology;
+- monetary tolerance behavior;
+- API persistence of validation errors;
+- automatic `validated` and `review_required` status transitions.
 
-The test suite does **not** call a live AI API. Provider behavior is mocked so tests remain fast, deterministic, and free of API cost.
+The suite still uses mocked AI responses, so automated tests do not call a live provider.
 
 ## Milestone boundary
 
-Milestone 3 answers:
+Milestone 4 answers:
 
-> Can the system turn a stored invoice into structurally valid candidate data and preserve it reliably?
+> Is the AI-extracted candidate internally consistent enough to accept automatically, and if not, can the system explain exactly why it needs review?
 
-Milestone 4 will answer:
+Milestone 5 will answer:
 
-> Is that candidate data internally consistent and safe to accept automatically?
-
-Keeping those questions separate is important. An AI response can be perfectly valid JSON and still contain a mathematically wrong invoice total.
+> Can a human review and correct flagged documents while preserving the original AI extraction and a traceable correction record?

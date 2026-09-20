@@ -351,3 +351,98 @@ Be able to explain:
 - how confidence thresholds should route work rather than prove correctness;
 - why validation errors should be stored as structured data;
 - how a document transitions from extracted candidate data to accepted or review-required data.
+
+## 21. Milestone 4: structural validity is not business validity
+
+A Pydantic model can prove that `total` is a non-negative number. It cannot prove that the number is correct for the invoice.
+
+```text
+Structural question: Is total a valid numeric field?
+Business question: Does subtotal + tax approximately equal total?
+```
+
+Keeping those questions separate is a reusable design pattern for AI systems. The model handles interpretation; deterministic code handles rules that can be stated exactly.
+
+## 22. Why business validation should be deterministic
+
+Rules such as arithmetic reconciliation, required fields, known currency codes, and date ordering have exact answers. Asking an LLM to decide them would make a deterministic problem probabilistic.
+
+The preferred flow is:
+
+```text
+AI proposes candidate data
+        ↓
+Python checks invariants
+        ↓
+pass or human review
+```
+
+An invariant is a condition that should remain true for acceptable data. Here, one invariant is `subtotal + tax ≈ total`.
+
+## 23. Decimal arithmetic and tolerance
+
+Binary floating-point numbers cannot exactly represent many decimal fractions. Financial comparisons therefore should not rely on expressions like:
+
+```python
+0.1 + 0.2 == 0.3
+```
+
+The validator converts extracted values to `Decimal` and uses a configurable tolerance:
+
+```text
+abs(expected - observed) <= 0.01
+```
+
+The tolerance represents the maximum harmless difference caused by rounding. It is a business parameter, not a mathematical universal.
+
+## 24. Confidence is a routing signal, not proof
+
+An AI confidence score does not prove correctness. A high-confidence extraction can still be wrong, and a low-confidence one can be right.
+
+The useful role of confidence is operational:
+
+```text
+confidence >= threshold -> eligible for auto-acceptance
+confidence < threshold  -> human review
+```
+
+It is one signal among several deterministic checks.
+
+## 25. Why validation failures use codes
+
+A structured issue such as:
+
+```json
+{
+  "code": "invoice_total_mismatch",
+  "field": "total",
+  "observed": "250.00",
+  "expected": "210.00"
+}
+```
+
+can be counted, filtered, displayed in a review UI, or analyzed later. A single free-form string is harder for software to use reliably.
+
+Stable machine-readable codes and human-readable messages serve different consumers.
+
+## 26. Workflow state means business state
+
+Milestone 4 distinguishes three important outcomes:
+
+```text
+validated         = extraction succeeded and deterministic checks passed
+review_required   = extraction succeeded but one or more checks failed
+extraction_failed = no acceptable structured extraction was produced
+```
+
+This distinction matters operationally. A review-required invoice is useful data awaiting a human decision; an extraction failure may need a retry, provider investigation, or manual entry.
+
+## Study before Milestone 5
+
+Be able to explain:
+
+- why original AI values must remain immutable after human correction;
+- the difference between a candidate record and an authoritative record;
+- why review reasons should be shown to the reviewer;
+- how audit fields such as reviewer, corrected time, and original values support traceability;
+- why a review endpoint should validate human corrections too.

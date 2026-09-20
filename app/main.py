@@ -5,7 +5,7 @@ from app.api.extractions import router as extractions_router
 from app.core.config import get_settings
 
 settings = get_settings()
-app = FastAPI(title=settings.app_name, version="0.3.0")
+app = FastAPI(title=settings.app_name, version="0.4.0")
 app.include_router(documents_router)
 app.include_router(extractions_router)
 

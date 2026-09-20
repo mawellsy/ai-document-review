@@ -16,12 +16,17 @@ from app.services.extraction import (
     AIExtractionError,
     InvoiceExtractor,
 )
+from app.services.validation import InvoiceBusinessValidator
 
 router = APIRouter(prefix="/documents", tags=["extractions"])
 
 
 def get_invoice_extractor(settings: Settings = Depends(get_settings)) -> InvoiceExtractor:
     return InvoiceExtractor(settings=settings)
+
+
+def get_invoice_validator(settings: Settings = Depends(get_settings)) -> InvoiceBusinessValidator:
+    return InvoiceBusinessValidator(settings=settings)
 
 
 def _decimal_or_none(value: float | None) -> Decimal | None:
@@ -37,8 +42,9 @@ def extract_document(
     document_id: str,
     db: Session = Depends(get_db),
     extractor: InvoiceExtractor = Depends(get_invoice_extractor),
+    validator: InvoiceBusinessValidator = Depends(get_invoice_validator),
 ) -> Extraction:
-    """Run AI extraction for one uploaded document and persist the typed result."""
+    """Run AI extraction, apply business validation, and persist the candidate result."""
     document = db.get(Document, document_id)
     if document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
@@ -64,6 +70,9 @@ def extract_document(
         ) from exc
 
     payload = result.payload
+    validation = validator.validate(payload)
+    validation_errors = [issue.to_dict() for issue in validation.issues]
+
     extraction = Extraction(
         document_id=document.id,
         invoice_number=payload.invoice_number,
@@ -79,8 +88,8 @@ def extract_document(
         model_used=result.model_used,
         ai_confidence=Decimal(str(payload.confidence)),
         raw_response_json=payload.model_dump(mode="json"),
-        validation_errors_json=None,
-        review_required=False,
+        validation_errors_json=validation_errors,
+        review_required=validation.review_required,
         line_items=[
             LineItem(
                 description=item.description,
@@ -94,7 +103,9 @@ def extract_document(
 
     try:
         db.add(extraction)
-        document.processing_status = "extracted"
+        document.processing_status = (
+            "review_required" if validation.review_required else "validated"
+        )
         db.commit()
         db.refresh(extraction)
     except SQLAlchemyError as exc:

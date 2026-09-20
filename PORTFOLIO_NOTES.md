@@ -108,12 +108,6 @@ Why: arithmetic, required fields, dates, and allowed currency codes are ordinary
 - "The architecture starts simple with SQLite but is structured for a PostgreSQL deployment."
 - "I include failure-path tests and human review for low-confidence cases."
 
-## Milestone status
-
-- Milestone 1: complete
-- Milestone 2: complete
-- Milestone 3: next
-
 ## Milestone 3 additions
 
 ### Skills demonstrated
@@ -161,11 +155,60 @@ Why: model versions can change output behavior. Recording the model improves deb
 - show typed invoice JSON returned and persisted;
 - retrieve it through `/extractions/latest`;
 - demonstrate a mocked provider failure test and `extraction_failed` status;
-- point out that arithmetic validation is intentionally a separate next step.
+- point out that arithmetic validation is handled by a separate deterministic service.
+
+## Milestone 4 additions
+
+### Problems solved
+
+- structurally valid AI output can still contain mathematically inconsistent invoice data;
+- low-confidence results now route to review instead of being treated as trusted;
+- invalid currency codes and suspicious date ordering are detected deterministically;
+- every review-required extraction now carries machine-readable reasons.
+
+### Skills demonstrated
+
+- deterministic post-AI validation
+- financial arithmetic with `Decimal` and configurable tolerance
+- ISO 4217 currency validation
+- configurable confidence-based routing
+- structured error design
+- workflow state modeling
+- integration of validation results with persistence and API responses
+- unit and API testing for business-rule failure paths
+
+### Architectural decisions
+
+#### Validate after structured extraction
+
+The AI first produces data that satisfies the Pydantic contract. `InvoiceBusinessValidator` then checks business invariants.
+
+Why: malformed data and inconsistent data are different failure classes and should remain independently testable.
+
+#### Preserve failed candidates
+
+A review-required extraction is still persisted with its original AI values plus structured validation errors.
+
+Why: reviewers need to see what the AI produced, and the project needs an audit trail before human corrections become authoritative in Milestone 5.
+
+#### Route instead of discard
+
+Business-rule failures set `review_required=true` and the document status to `review_required` rather than deleting or silently rewriting the extraction.
+
+Why: uncertain documents still contain useful work and should be recoverable by a person.
+
+### Demo moments added
+
+- process the valid synthetic invoice and show `review_required=false`;
+- process an inconsistent invoice and show `invoice_total_mismatch`;
+- show the document status changing to `validated` or `review_required`;
+- point out `observed` and `expected` values in the validation error;
+- run the business-validation tests to demonstrate deterministic failure handling.
 
 ## Milestone status
 
 - Milestone 1: complete
 - Milestone 2: complete
 - Milestone 3: complete
-- Milestone 4: next
+- Milestone 4: complete
+- Milestone 5: next

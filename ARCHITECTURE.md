@@ -10,34 +10,37 @@ flowchart LR
     S[Document Storage]
     DB[(Relational Database)]
     E[InvoiceExtractor]
-    O[OpenAI Responses API]
+    O[AI Provider]
     P[Pydantic Structured Output]
-    B[Business Validation]
+    B[InvoiceBusinessValidator]
     R[Human Review Queue]
     X[JSON / CSV / API]
 
     U --> API --> V --> S
     S --> DB
-    DB --> E --> O --> P
-    P --> DB
-    P -. Milestone 4 .-> B
+    DB --> E --> O --> P --> B
     B -->|valid| DB
-    B -->|uncertain / invalid| R
+    B -->|review required| DB
+    B -. Milestone 5 .-> R
     R -->|corrected| DB
     DB --> X
 ```
 
-## Milestone 3 extraction boundary
+## Milestone 4 validation boundary
 
 ```text
-STORED DOCUMENT                     PROVIDER BOUNDARY                     APPLICATION DATA
-
-PDF / PNG / JPEG  ──> base64 input ──> AI model ──> strict schema ──> Extraction + LineItem rows
-                                                │
-                                                └── invalid/provider failure -> retry -> controlled failure
+STORED DOCUMENT
+      ↓
+AI extraction
+      ↓
+Pydantic structural validation
+      ↓
+InvoiceBusinessValidator
+      ├── no issues -> review_required=false -> document status: validated
+      └── issues    -> review_required=true  -> document status: review_required
+      ↓
+Extraction row stores candidate + structured validation errors
 ```
-
-The AI provider performs interpretation. Pydantic defines the acceptable shape and types. SQLAlchemy persists only the validated candidate extraction.
 
 ## Responsibility boundaries
 
@@ -45,52 +48,77 @@ The AI provider performs interpretation. Pydantic defines the acceptable shape a
 |---|---|
 | Document API | Upload and retrieve safe document metadata |
 | Storage service | Sanitize names, validate type, enforce size, persist bytes |
-| Extraction API | Coordinate extraction status, persistence, and HTTP errors |
+| Extraction API | Coordinate extraction, validation, persistence, workflow status, and HTTP errors |
 | InvoiceExtractor | Encode the stored file, call the provider, require structured output, retry transient failures |
 | Extraction Pydantic schema | Define exactly what structurally valid invoice output looks like |
-| Database | Persist documents, candidate extractions, line items, reviews, and status |
-| Business validation | Milestone 4: totals, required fields, currency validity, dates, confidence thresholds |
-| Human review | Milestone 5: correct uncertain/invalid extractions without losing the original AI result |
-
-## Why provider code is isolated
-
-Provider APIs change more often than the invoice domain model. Keeping the OpenAI request inside `InvoiceExtractor` means a future provider swap should primarily affect one service instead of leaking provider-specific response objects across routes and database code.
-
-```text
-FastAPI route -> InvoiceExtractor interface -> provider SDK
-                     |
-                     +-> AIExtractionResult -> persistence
-```
-
-## Retry boundary
-
-`AI_MAX_ATTEMPTS` controls the maximum number of extraction attempts.
-
-A retry is appropriate for provider/transport failures or a provider response that cannot be parsed into the required schema. A missing API key is a configuration error and is not retried.
-
-The current retry policy is intentionally simple. Exponential backoff and provider-specific error classification can be added when deployment requirements justify them.
+| InvoiceBusinessValidator | Apply deterministic arithmetic, required-field, date, currency, and confidence rules |
+| Database | Preserve documents, AI candidate data, line items, validation errors, review flags, and status |
+| Human review | Milestone 5: correct review-required extractions without losing the original AI result |
 
 ## Structural validation vs business validation
 
-These are deliberately different layers.
+These layers answer different questions.
 
 ### Structural validation
 
+Pydantic answers: **Is this data shaped correctly?**
+
 Examples:
 
-- `invoice_date` must parse as a date;
-- `confidence` must be between 0 and 1;
-- line items must contain the expected keys;
-- unexpected fields are rejected.
+- `invoice_date` parses as a real date;
+- `confidence` is between 0 and 1;
+- numeric values are non-negative;
+- line items contain the expected fields;
+- unexpected keys are rejected.
 
 ### Business validation
 
-Examples reserved for Milestone 4:
+`InvoiceBusinessValidator` answers: **Does this structurally valid invoice make sense under our operating rules?**
 
+Examples:
+
+- required auto-accept fields are present;
 - `subtotal + tax ≈ total`;
-- line items add up to subtotal;
-- invoice number is present;
-- currency is an allowed ISO code;
-- low confidence requires human review.
+- line-item amounts reconcile to the subtotal;
+- line-item quantity and unit price reconcile to amount;
+- currency is a known transactional ISO 4217 code;
+- due date is not earlier than invoice date;
+- confidence meets the configured threshold.
 
-A payload can pass structural validation while failing business validation. That distinction is central to reliable AI workflows.
+A payload can pass structural validation and still require human review.
+
+## Why validation errors are structured
+
+Validation failures are stored as objects with fields such as:
+
+```text
+code
+field
+message
+observed
+expected
+```
+
+This is more useful than one concatenated error string because later code can filter, count, display, and analyze individual failure reasons. Milestone 5 can render these reasons directly in the human review queue.
+
+## Monetary comparisons
+
+Money is not compared with raw binary floating-point equality. Extracted numeric values are converted to `Decimal` and compared using `AMOUNT_TOLERANCE`.
+
+```text
+abs(expected - observed) <= tolerance
+```
+
+This allows harmless rounding differences while still catching material inconsistencies.
+
+## Workflow state
+
+```text
+uploaded -> extracting -> validated
+                      \
+                       -> review_required
+                      \
+                       -> extraction_failed
+```
+
+`extraction_failed` means the system could not obtain valid structured candidate data. `review_required` means extraction succeeded, but deterministic rules found reasons a human should inspect it. Those are deliberately different failure classes.

@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     ai_model: str = "replace-with-document-capable-model"
     ai_api_key: str = ""
     ai_max_attempts: int = Field(default=2, ge=1, le=5)
+    ai_confidence_threshold: float = Field(default=0.80, ge=0, le=1)
+    amount_tolerance: float = Field(default=0.01, gt=0, le=1)
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -47,6 +47,34 @@ class SuccessfulExtractor:
         return AIExtractionResult(payload=payload, model_used="mock-model", provider_response_id="mock-1")
 
 
+class InconsistentExtractor:
+    def extract(self, document) -> AIExtractionResult:
+        payload = InvoiceExtractionPayload.model_validate(
+            {
+                "invoice_number": "INV-2026-002",
+                "invoice_date": "2026-09-01",
+                "vendor_name": "Northwind Services",
+                "vendor_address": "100 Main Street",
+                "customer_name": "Contoso Ltd",
+                "subtotal": 200,
+                "tax": 10,
+                "total": 999,
+                "currency": "USD",
+                "due_date": "2026-10-01",
+                "line_items": [
+                    {
+                        "description": "Preventive maintenance",
+                        "quantity": 2,
+                        "unit_price": 100,
+                        "amount": 200,
+                    }
+                ],
+                "confidence": 0.97,
+            }
+        )
+        return AIExtractionResult(payload=payload, model_used="mock-model", provider_response_id="mock-2")
+
+
 class FailingExtractor:
     def extract(self, document) -> AIExtractionResult:
         raise AIExtractionError("Mock extraction failure.")
@@ -108,6 +136,8 @@ def test_extract_document_persists_structured_result(client: TestClient) -> None
     assert body["invoice_number"] == "INV-2026-001"
     assert body["currency"] == "USD"
     assert body["model_used"] == "mock-model"
+    assert body["review_required"] is False
+    assert body["validation_errors"] == []
     assert body["line_items"][0]["description"] == "Preventive maintenance"
 
     latest = client.get(f"/documents/{document_id}/extractions/latest")
@@ -115,7 +145,22 @@ def test_extract_document_persists_structured_result(client: TestClient) -> None
     assert latest.json()["id"] == body["id"]
 
     document = client.get(f"/documents/{document_id}")
-    assert document.json()["processing_status"] == "extracted"
+    assert document.json()["processing_status"] == "validated"
+
+
+def test_business_validation_routes_inconsistent_invoice_to_review(client: TestClient) -> None:
+    document_id = upload_document(client)
+    app.dependency_overrides[get_invoice_extractor] = lambda: InconsistentExtractor()
+
+    response = client.post(f"/documents/{document_id}/extractions")
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["review_required"] is True
+    assert {issue["code"] for issue in body["validation_errors"]} == {"invoice_total_mismatch"}
+
+    document = client.get(f"/documents/{document_id}")
+    assert document.json()["processing_status"] == "review_required"
 
 
 def test_extraction_failure_marks_document_failed(client: TestClient) -> None:

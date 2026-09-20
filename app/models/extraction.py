@@ -45,3 +45,7 @@ class Extraction(Base):
     line_items: Mapped[list["LineItem"]] = relationship(
         back_populates="extraction", cascade="all, delete-orphan"
     )
+
+    @property
+    def validation_errors(self) -> list[dict]:
+        return self.validation_errors_json or []
