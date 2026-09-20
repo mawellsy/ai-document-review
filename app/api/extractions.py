@@ -10,6 +10,7 @@ from app.db.session import get_db
 from app.models.document import Document
 from app.models.extraction import Extraction
 from app.models.line_item import LineItem
+from app.models.review import Review
 from app.schemas.extraction import ExtractionResponse
 from app.services.extraction import (
     AIConfigurationError,
@@ -103,9 +104,39 @@ def extract_document(
 
     try:
         db.add(extraction)
-        document.processing_status = (
-            "review_required" if validation.review_required else "validated"
-        )
+        if validation.review_required:
+            document.processing_status = "review_required"
+            pending_review = db.scalar(
+                select(Review)
+                .where(
+                    Review.document_id == document.id,
+                    Review.review_status == "pending",
+                )
+                .order_by(Review.created_at.desc())
+                .limit(1)
+            )
+            reason = _review_reason(validation_errors)
+            if pending_review is None:
+                db.add(
+                    Review(
+                        document_id=document.id,
+                        review_status="pending",
+                        reason=reason,
+                    )
+                )
+            else:
+                pending_review.reason = reason
+        else:
+            document.processing_status = "validated"
+            pending_reviews = db.scalars(
+                select(Review).where(
+                    Review.document_id == document.id,
+                    Review.review_status == "pending",
+                )
+            ).all()
+            for pending_review in pending_reviews:
+                pending_review.review_status = "superseded"
+
         db.commit()
         db.refresh(extraction)
     except SQLAlchemyError as exc:
@@ -151,3 +182,9 @@ def _load_extraction(db: Session, extraction_id: str) -> Extraction:
     if extraction is None:
         raise RuntimeError("Extraction disappeared after persistence.")
     return extraction
+
+
+def _review_reason(validation_errors: list[dict]) -> str:
+    return "; ".join(
+        f"{issue['code']}: {issue['message']}" for issue in validation_errors
+    )

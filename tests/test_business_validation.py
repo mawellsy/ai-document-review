@@ -120,3 +120,15 @@ def test_tolerance_allows_one_cent_rounding_difference() -> None:
     result = validate(data, amount_tolerance=0.01)
 
     assert "invoice_total_mismatch" not in issue_codes(result)
+
+
+def test_human_review_validation_can_ignore_ai_confidence() -> None:
+    data = valid_data()
+    data["confidence"] = 0.20
+    settings = Settings(_env_file=None, ai_confidence_threshold=0.80)
+    payload = InvoiceExtractionPayload.model_validate(data)
+
+    result = InvoiceBusinessValidator(settings).validate(payload, check_confidence=False)
+
+    assert "low_ai_confidence" not in issue_codes(result)
+    assert result.review_required is False

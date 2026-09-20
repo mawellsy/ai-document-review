@@ -8,7 +8,7 @@ A fictional company manually copies invoice data into internal systems. Manual e
 
 ## Current scope
 
-**Milestone 4 complete: deterministic business validation**
+**Milestone 5 complete: human review queue and authoritative corrections**
 
 Implemented so far:
 
@@ -31,16 +31,22 @@ Implemented so far:
 - ISO 4217 currency-code checking
 - structured validation errors persisted with each extraction
 - automatic `validated` vs `review_required` routing state
+- automatic creation of pending review work for flagged invoices
+- `GET /reviews`, `GET /reviews/{document_id}`, and `POST /reviews/{document_id}`
+- partial human correction overlays plus confirm-as-is review decisions
+- revalidation of human-corrected data before completion
+- immutable original AI extraction alongside persisted human corrections
+- authoritative merged result with per-field `ai` vs `human` provenance
+- reviewer identity and correction timestamp audit fields
 - mocked AI tests with no live API calls
 - portfolio and learning notes
 
 Not implemented yet:
 
-- human review endpoints and correction workflow
-- authoritative corrected-record handling
-- export
+- JSON/CSV export
+- optional review dashboard UI
 
-Those remain separate milestones so the review workflow can build on already-persisted validation evidence rather than mixing extraction, validation, and correction into one oversized route.
+Those remain separate milestones so the review workflow stays focused on auditability and correctness before downstream export is added.
 
 ## Architecture
 
@@ -59,7 +65,11 @@ flowchart TD
     J -->|REVIEW| L[review_required]
     K --> M[(Extraction + Line Items)]
     L --> M
-    L -. Milestone 5 .-> N[Human Review Queue]
+    L --> N[Pending Review]
+    N --> O[Human Confirm / Correct]
+    O --> P[Revalidate Corrected Result]
+    P -->|PASS| Q[reviewed]
+    Q --> R[(Persisted Correction Overlay)]
 ```
 
 ### Trust boundary
@@ -77,10 +87,16 @@ strict Pydantic structure validation
       ↓
 deterministic business validation
       ├── pass   -> validated
-      └── issues -> review_required
+      └── issues -> review_required -> human review
+                                      ↓
+                         confirm or correct fields
+                                      ↓
+                         deterministic revalidation
+                                      ↓
+                                   reviewed
 ```
 
-The model interprets the document. Python defines whether the resulting candidate data is acceptable for automatic processing.
+The model interprets the document. Python decides whether the candidate can be accepted automatically. A human can then confirm or correct flagged data without overwriting the original AI record.
 
 ## Repository structure
 
@@ -89,14 +105,16 @@ ai-document-review-pipeline/
 ├── app/
 │   ├── api/
 │   │   ├── documents.py
-│   │   └── extractions.py
+│   │   ├── extractions.py
+│   │   └── reviews.py
 │   ├── core/
 │   │   └── config.py
 │   ├── db/
 │   ├── models/
 │   ├── schemas/
 │   │   ├── document.py
-│   │   └── extraction.py
+│   │   ├── extraction.py
+│   │   └── review.py
 │   ├── services/
 │   │   ├── storage.py
 │   │   ├── extraction.py
@@ -172,7 +190,58 @@ An inconsistent invoice can instead return:
 }
 ```
 
-The original AI extraction remains persisted even when review is required. Milestone 5 will let a human correct it without destroying the original candidate data.
+The original AI extraction remains persisted even when review is required. The review workflow stores only the human correction overlay, so the AI candidate remains available for audit.
+
+### 4. List the pending review queue
+
+```bash
+curl http://127.0.0.1:8000/reviews
+```
+
+Use `?status=completed`, `?status=superseded`, or `?status=all` to inspect other review states.
+
+### 5. Inspect one review
+
+```bash
+curl \
+  http://127.0.0.1:8000/reviews/<DOCUMENT_ID>
+```
+
+The detail response contains three distinct views:
+
+- `original_extraction`: immutable AI candidate data;
+- `corrections`: only fields explicitly confirmed as corrections by the reviewer;
+- `authoritative_result`: the merged result clients should use after review, plus `field_sources` showing whether each field came from AI or human input.
+
+### 6. Submit a correction
+
+```bash
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "corrected_by": "reviewer@example.com",
+    "corrections": {
+      "total": 210.00
+    }
+  }' \
+  http://127.0.0.1:8000/reviews/<DOCUMENT_ID>
+```
+
+An empty `corrections` object means the human reviewed the invoice and confirmed the AI values as-is. Human-corrected data is run through business validation again. AI confidence is not rechecked after a human decision because confidence is a model-routing signal, not a property of the human-confirmed record.
+
+## Authoritative-record strategy
+
+The project deliberately does **not** overwrite the original `Extraction` row. Instead:
+
+```text
+immutable AI extraction
+        +
+persisted human correction overlay
+        =
+authoritative reviewed result
+```
+
+This keeps both values available for audit while avoiding duplicated copies of unchanged fields. `field_sources` makes provenance explicit at read time.
 
 ## Business validation rules
 
@@ -202,9 +271,17 @@ AI candidate extracted
 business validation
    ├── no issues -> validated
    └── issues    -> review_required
+                       ↓
+                 pending review
+                       ↓
+              human confirm/correct
+                       ↓
+                 revalidation
+                       ↓
+                    reviewed
 ```
 
-Milestone 5 will turn `review_required` into an actual human review queue and correction workflow.
+A later re-extraction that passes validation can mark an obsolete pending review as `superseded`, preventing stale work from remaining in the default queue.
 
 ## Configuration
 
@@ -254,28 +331,25 @@ http://127.0.0.1:8000/docs
 pytest -q
 ```
 
-Milestone 4 adds tests for:
+Milestone 5 adds tests for:
 
-- clean invoices passing validation;
-- missing required fields;
-- invalid ISO currency codes;
-- low AI confidence;
-- invoice-total mismatches;
-- line-item subtotal mismatches;
-- line-item quantity/price mismatches;
-- invalid invoice/due-date chronology;
-- monetary tolerance behavior;
-- API persistence of validation errors;
-- automatic `validated` and `review_required` status transitions.
+- automatic creation of pending reviews for flagged invoices;
+- queue filtering by review status;
+- review detail with original AI values and structured reasons;
+- partial human corrections becoming authoritative;
+- preservation of the original AI extraction after correction;
+- per-field `ai`/`human` provenance;
+- persistence of reviewer and correction timestamp;
+- rejection of human corrections that still violate business rules;
+- confirm-as-is review for low-confidence but otherwise valid invoices;
+- prevention of duplicate review completion.
 
 The suite still uses mocked AI responses, so automated tests do not call a live provider.
 
 ## Milestone boundary
 
-Milestone 4 answers:
+Milestone 5 answers:
 
-> Is the AI-extracted candidate internally consistent enough to accept automatically, and if not, can the system explain exactly why it needs review?
+> Can a human review or correct flagged documents, can the system revalidate that decision, and can downstream consumers distinguish original AI values from authoritative human-reviewed values?
 
-Milestone 5 will answer:
-
-> Can a human review and correct flagged documents while preserving the original AI extraction and a traceable correction record?
+Milestone 6 will add JSON/CSV export of the final authoritative information.

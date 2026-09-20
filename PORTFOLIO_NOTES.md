@@ -212,3 +212,71 @@ Why: uncertain documents still contain useful work and should be recoverable by 
 - Milestone 3: complete
 - Milestone 4: complete
 - Milestone 5: next
+
+## Milestone 5 additions
+
+### Problems solved
+
+- flagged invoices now enter an actual human work queue instead of stopping at a status flag;
+- reviewers can see why a document needs attention before changing anything;
+- human corrections become authoritative without overwriting the original AI extraction;
+- low-confidence but otherwise correct invoices can be explicitly confirmed by a person;
+- invalid human edits are rejected before a review is completed;
+- field-level provenance distinguishes AI-derived values from human-corrected values.
+
+### Skills demonstrated
+
+- human-in-the-loop workflow design
+- review queue API design
+- partial update/overlay semantics
+- immutable candidate records and authoritative read models
+- data provenance and auditability
+- workflow-state transitions
+- deterministic validation of human edits
+- SQLAlchemy relationship loading and persisted review audit fields
+- integration tests covering multi-step business workflows
+
+### Architectural decisions
+
+#### Preserve the AI extraction
+
+The `Extraction` row remains unchanged after review. Human edits are stored in `Review.corrected_values_json`.
+
+Why: replacing AI values would destroy evidence needed to explain what the model originally produced and what the reviewer actually changed.
+
+#### Compute an authoritative read model
+
+The review detail endpoint merges the immutable AI candidate with the persisted human correction overlay and returns `field_sources` for every business field.
+
+Why: downstream consumers need one usable record, while auditors need provenance. The merge gives both without copying unchanged values.
+
+#### Revalidate human corrections
+
+A review cannot complete while corrected values still violate deterministic invoice rules. AI-confidence routing is skipped after a human decision.
+
+Why: human authority should override model uncertainty, but not arithmetic, currency, required-field, or chronology rules.
+
+#### Support confirm-as-is
+
+An empty correction object is a valid human decision.
+
+Why: some documents are routed to review only because confidence is low; a reviewer should be able to confirm correct values without inventing a fake edit.
+
+### Demo moments added
+
+- create an inconsistent extraction and show it appearing in `GET /reviews`;
+- open `GET /reviews/{document_id}` and show the AI values plus review reason;
+- correct only `total` through `POST /reviews/{document_id}`;
+- show that `original_extraction.total` stays wrong while `authoritative_result.total` is corrected;
+- show `field_sources.total = human` and unchanged fields remaining `ai`;
+- demonstrate a bad correction returning `422` and leaving the review pending;
+- show the document state changing from `review_required` to `reviewed`.
+
+## Milestone status
+
+- Milestone 1: complete
+- Milestone 2: complete
+- Milestone 3: complete
+- Milestone 4: complete
+- Milestone 5: complete
+- Milestone 6: next

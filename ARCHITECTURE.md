@@ -13,34 +13,73 @@ flowchart LR
     O[AI Provider]
     P[Pydantic Structured Output]
     B[InvoiceBusinessValidator]
-    R[Human Review Queue]
+    R[Pending Review Queue]
+    H[Human Reviewer]
+    A[Authoritative Result]
     X[JSON / CSV / API]
 
     U --> API --> V --> S
     S --> DB
     DB --> E --> O --> P --> B
     B -->|valid| DB
-    B -->|review required| DB
-    B -. Milestone 5 .-> R
-    R -->|corrected| DB
-    DB --> X
+    B -->|review required| R
+    R --> H
+    H -->|confirm / correct| B
+    B -->|human-reviewed pass| DB
+    DB --> A
+    A -. Milestone 6 .-> X
 ```
 
-## Milestone 4 validation boundary
+## Milestone 5 review boundary
 
 ```text
-STORED DOCUMENT
+AI candidate extraction
       ↓
-AI extraction
-      ↓
-Pydantic structural validation
-      ↓
-InvoiceBusinessValidator
-      ├── no issues -> review_required=false -> document status: validated
-      └── issues    -> review_required=true  -> document status: review_required
-      ↓
-Extraction row stores candidate + structured validation errors
+deterministic business validation
+      ├── pass   -> document status: validated
+      └── issues -> document status: review_required
+                        ↓
+                  pending Review row
+                        ↓
+                  human decision
+                  ├── confirm as-is
+                  └── partial corrections
+                        ↓
+           deterministic revalidation
+                        ├── fail -> review remains pending
+                        └── pass -> review completed
+                                   document status: reviewed
 ```
+
+## Candidate vs authoritative record
+
+The original AI extraction is immutable. Human review stores only the fields the reviewer changed.
+
+```text
+Extraction row                 Review row
+(original AI candidate)        (human correction overlay)
+        │                              │
+        └──────────────┬───────────────┘
+                       ↓
+             authoritative result
+                       +
+              per-field provenance
+```
+
+Example:
+
+```text
+AI total:      999.00
+Human patch:   total = 210.00
+
+original_extraction.total      -> 999.00
+corrections.total              -> 210.00
+authoritative_result.total     -> 210.00
+field_sources.total            -> human
+field_sources.vendor_name      -> ai
+```
+
+This preserves traceability without duplicating every unchanged field in a second invoice record.
 
 ## Responsibility boundaries
 
@@ -48,77 +87,57 @@ Extraction row stores candidate + structured validation errors
 |---|---|
 | Document API | Upload and retrieve safe document metadata |
 | Storage service | Sanitize names, validate type, enforce size, persist bytes |
-| Extraction API | Coordinate extraction, validation, persistence, workflow status, and HTTP errors |
-| InvoiceExtractor | Encode the stored file, call the provider, require structured output, retry transient failures |
-| Extraction Pydantic schema | Define exactly what structurally valid invoice output looks like |
+| Extraction API | Coordinate AI extraction, validation, persistence, and initial workflow routing |
+| InvoiceExtractor | Call the provider and require strict structured output |
+| Extraction Pydantic schema | Define structurally valid invoice data |
 | InvoiceBusinessValidator | Apply deterministic arithmetic, required-field, date, currency, and confidence rules |
-| Database | Preserve documents, AI candidate data, line items, validation errors, review flags, and status |
-| Human review | Milestone 5: correct review-required extractions without losing the original AI result |
+| Review API | List pending work, show review context, accept human confirmation/corrections |
+| Review schema | Constrain partial correction payloads and expose authoritative values with provenance |
+| Database | Preserve document metadata, AI candidate data, validation evidence, review audit data, and corrections |
 
-## Structural validation vs business validation
+## Why human corrections are revalidated
 
-These layers answer different questions.
+Human input is more authoritative than AI output, but it is not magically immune to typos. A reviewer could enter a total that still does not reconcile.
 
-### Structural validation
-
-Pydantic answers: **Is this data shaped correctly?**
-
-Examples:
-
-- `invoice_date` parses as a real date;
-- `confidence` is between 0 and 1;
-- numeric values are non-negative;
-- line items contain the expected fields;
-- unexpected keys are rejected.
-
-### Business validation
-
-`InvoiceBusinessValidator` answers: **Does this structurally valid invoice make sense under our operating rules?**
-
-Examples:
-
-- required auto-accept fields are present;
-- `subtotal + tax ≈ total`;
-- line-item amounts reconcile to the subtotal;
-- line-item quantity and unit price reconcile to amount;
-- currency is a known transactional ISO 4217 code;
-- due date is not earlier than invoice date;
-- confidence meets the configured threshold.
-
-A payload can pass structural validation and still require human review.
-
-## Why validation errors are structured
-
-Validation failures are stored as objects with fields such as:
+Therefore:
 
 ```text
-code
-field
-message
-observed
-expected
+human correction
+      ↓
+same deterministic business rules
+      ↓
+valid -> complete review
+invalid -> HTTP 422, review stays pending
 ```
 
-This is more useful than one concatenated error string because later code can filter, count, display, and analyze individual failure reasons. Milestone 5 can render these reasons directly in the human review queue.
+The only business check skipped after human review is **AI confidence**. Confidence routed the AI candidate to a person; once a person has reviewed the record, the model's self-reported uncertainty should not block that human decision.
 
-## Monetary comparisons
-
-Money is not compared with raw binary floating-point equality. Extracted numeric values are converted to `Decimal` and compared using `AMOUNT_TOLERANCE`.
+## Review states
 
 ```text
-abs(expected - observed) <= tolerance
+pending      review awaits a human decision
+completed    a human confirmed/corrected and revalidation passed
+superseded   a later clean extraction made the old pending review obsolete
 ```
 
-This allows harmless rounding differences while still catching material inconsistencies.
-
-## Workflow state
+Document workflow states now include:
 
 ```text
-uploaded -> extracting -> validated
-                      \
-                       -> review_required
-                      \
-                       -> extraction_failed
+uploaded
+  ↓
+extracting
+  ├── extraction_failed
+  ↓
+business validation
+  ├── validated
+  └── review_required
+          ↓
+       reviewed
 ```
 
-`extraction_failed` means the system could not obtain valid structured candidate data. `review_required` means extraction succeeded, but deterministic rules found reasons a human should inspect it. Those are deliberately different failure classes.
+## Current limitations
+
+- The review is document-level and resolves against the latest extraction rather than storing an explicit `extraction_id` foreign key.
+- The correction overlay is exposed through the API; a dedicated review UI is optional later work.
+- Schema migrations are not yet managed with Alembic; this portfolio stage uses `create_all` for fresh demo databases.
+- Export is Milestone 6.

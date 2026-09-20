@@ -446,3 +446,124 @@ Be able to explain:
 - why review reasons should be shown to the reviewer;
 - how audit fields such as reviewer, corrected time, and original values support traceability;
 - why a review endpoint should validate human corrections too.
+
+## 27. Milestone 5: candidate data vs authoritative data
+
+An AI extraction is a **candidate**: useful, structured data that may still require confirmation.
+
+An **authoritative** record is the version downstream software should treat as approved.
+
+For a reviewed invoice:
+
+```text
+AI candidate + human correction overlay = authoritative result
+```
+
+The project keeps these concepts separate rather than mutating the AI candidate in place.
+
+## 28. Why immutable originals matter
+
+Suppose the AI extracts:
+
+```text
+total = 999.00
+```
+
+and a reviewer corrects it to:
+
+```text
+total = 210.00
+```
+
+If the database simply overwrites `999.00`, you can no longer answer:
+
+- what did the model originally produce?
+- what did the human change?
+- which fields were trusted without correction?
+- why did this document enter review?
+
+Preserving the original and storing the correction separately gives an audit trail.
+
+## 29. Overlay semantics
+
+A correction overlay contains only fields the reviewer explicitly changed.
+
+```json
+{
+  "total": 210.00
+}
+```
+
+The authoritative result is computed by applying that patch over the original candidate.
+
+```text
+original vendor_name -> retained
+original subtotal    -> retained
+corrected total      -> replaces original total
+```
+
+This is similar to a partial update, but the original source record remains immutable.
+
+## 30. Provenance
+
+**Provenance** means knowing where a value came from.
+
+The API returns a source map such as:
+
+```json
+{
+  "vendor_name": "ai",
+  "subtotal": "ai",
+  "total": "human"
+}
+```
+
+Provenance matters in AI systems because a final record can contain a mixture of machine-extracted and human-corrected values.
+
+## 31. Human-in-the-loop does not mean human-without-validation
+
+A human reviewer can make typing mistakes. Human corrections therefore still pass deterministic rules before the review is completed.
+
+```text
+human edit -> deterministic checks -> complete or reject
+```
+
+The system skips the AI-confidence check after human review because confidence describes the model's uncertainty, not the quality of the human decision.
+
+## 32. Confirm-as-is is a real business action
+
+Not every review requires a changed field. A document can be mathematically correct but routed to review because AI confidence is low.
+
+An empty correction object therefore means:
+
+```text
+"I reviewed the candidate and approve it as extracted."
+```
+
+That decision is still auditable through `corrected_by`, `corrected_at`, and `review_status=completed`.
+
+## 33. Review queue state
+
+The review table has its own lifecycle:
+
+```text
+pending -> completed
+       \\-> superseded
+```
+
+`completed` means a person made a decision and the resulting record passed deterministic validation.
+
+`superseded` means a newer clean extraction made the pending work obsolete.
+
+Keeping review state separate from document state avoids forcing one status field to represent every layer of the workflow.
+
+## Study before Milestone 6
+
+Be able to explain:
+
+- candidate vs authoritative records;
+- why correction overlays preserve auditability;
+- what field-level provenance means;
+- why human corrections still need deterministic validation;
+- why AI confidence is skipped after human confirmation;
+- how the API decides which record should be exported as final data.

@@ -59,12 +59,18 @@ class InvoiceBusinessValidator:
         self.confidence_threshold = Decimal(str(settings.ai_confidence_threshold))
         self.amount_tolerance = Decimal(str(settings.amount_tolerance))
 
-    def validate(self, payload: InvoiceExtractionPayload) -> ValidationResult:
+    def validate(
+        self,
+        payload: InvoiceExtractionPayload,
+        *,
+        check_confidence: bool = True,
+    ) -> ValidationResult:
         issues: list[ValidationIssue] = []
 
         self._validate_required_fields(payload, issues)
         self._validate_currency(payload, issues)
-        self._validate_confidence(payload, issues)
+        if check_confidence:
+            self._validate_confidence(payload, issues)
         self._validate_dates(payload, issues)
         self._validate_totals(payload, issues)
         self._validate_line_items(payload, issues)
