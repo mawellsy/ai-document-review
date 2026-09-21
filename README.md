@@ -6,6 +6,16 @@ The system is designed around one rule: **AI may interpret a document, but it do
 
 ![Architecture](docs/screenshots/architecture.png)
 
+## Project status
+
+**Complete portfolio implementation.**
+
+The end-to-end workflow is implemented and tested:
+
+```text
+Upload → AI extraction → deterministic validation → human review when required → authoritative JSON/CSV export
+```
+
 ## What this project solves
 
 A fictional operations team receives invoices as PDFs and images and manually keys invoice fields into internal systems. That work is repetitive and error-prone, while a fully autonomous AI workflow would create a different risk: malformed, low-confidence, or mathematically inconsistent output could move downstream without review.
@@ -134,7 +144,7 @@ This prevents an uncertain AI candidate from quietly escaping into downstream ac
 Requirements: Python 3.11+.
 
 ```bash
-cd ~/Projects/Upwork/ai-document-review
+cd ai-document-review
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -264,12 +274,12 @@ Known limitations:
 
 ## Portfolio status
 
-**Complete through Milestone 7.**
+**Complete portfolio implementation.**
 
-The repository now demonstrates an end-to-end business workflow:
+The repository demonstrates the complete end-to-end workflow:
 
 ```text
-Upload → Extract → Validate → Review exceptions → Export authoritative data
+Upload → AI extraction → deterministic validation → human review when required → authoritative JSON/CSV export
 ```
 
 The project is built for freelance/Upwork demonstrations: recognizable business problem, explainable architecture, visible reliability controls, failure-path tests, and a short demo path rather than a feature-count contest.
