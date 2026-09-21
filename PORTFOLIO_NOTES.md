@@ -280,3 +280,63 @@ Why: some documents are routed to review only because confidence is low; a revie
 - Milestone 4: complete
 - Milestone 5: complete
 - Milestone 6: next
+
+## Milestone 6 additions
+
+### Problems solved
+
+- downstream systems now have one stable endpoint for final approved invoice data;
+- JSON and CSV exports use the same authoritative-record logic as API retrieval;
+- pending or incomplete documents cannot be exported accidentally;
+- human corrections and field provenance survive downstream export;
+- nested invoice line items are converted into an import-friendly CSV shape.
+
+### Skills demonstrated
+
+- downstream API/read-model design
+- JSON and CSV serialization
+- export safety and workflow gating
+- service-layer reuse across multiple representations
+- flattening nested business data for tabular systems
+- HTTP download headers and deterministic filenames
+- preservation of audit/provenance metadata across formats
+- end-to-end integration testing from upload through export
+
+### Architectural decisions
+
+#### Centralize authoritative-result resolution
+
+API retrieval, JSON export, CSV export, and the review detail view reuse the same merge semantics rather than reimplementing candidate/correction logic independently.
+
+Why: one authoritative rule prevents format-specific inconsistencies and makes later integrations safer.
+
+#### Export only approved workflow states
+
+Only `validated` and `reviewed` documents are exportable. Pending review and incomplete processing return `409`.
+
+Why: downstream systems should never have to guess whether received data is approved.
+
+#### Use one CSV row per line item
+
+Invoice header fields repeat for every item.
+
+Why: this shape is easy to inspect in a spreadsheet and easy to load into a flat staging table without inventing a second CSV file.
+
+### Demo moments added
+
+- process a clean invoice and retrieve `/documents/{id}/result`;
+- download its JSON export and show `result_source=ai_validated`;
+- export a two-line invoice to CSV and show two rows;
+- correct a flagged invoice, then export it and show the human-corrected total;
+- point out `field_sources_json` proving which field was human-corrected;
+- attempt export before review completion and show the controlled `409` response.
+
+## Milestone status
+
+- Milestone 1: complete
+- Milestone 2: complete
+- Milestone 3: complete
+- Milestone 4: complete
+- Milestone 5: complete
+- Milestone 6: complete
+- Milestone 7: next (portfolio polish)

@@ -567,3 +567,71 @@ Be able to explain:
 - why human corrections still need deterministic validation;
 - why AI confidence is skipped after human confirmation;
 - how the API decides which record should be exported as final data.
+
+## 34. Milestone 6: workflow state vs transport format
+
+A record being available in JSON or CSV does **not** mean it is approved. Approval is a workflow decision; JSON and CSV are only transport formats.
+
+The resolver therefore checks state first:
+
+```text
+validated -> exportable
+reviewed  -> exportable
+review_required -> blocked
+uploaded/extracting/extraction_failed -> blocked
+```
+
+This prevents an unreviewed AI candidate from escaping into another business system merely because an export endpoint exists.
+
+## 35. Authoritative-result resolver
+
+The resolver is a small service that answers one question:
+
+> What is the final downstream-facing record for this document right now?
+
+For `validated`, the latest AI extraction is authoritative. For `reviewed`, the latest extraction is combined with the completed human correction overlay.
+
+Keeping this logic in one service avoids duplicating slightly different merge rules across API, JSON, and CSV endpoints.
+
+## 36. Fail closed
+
+**Fail closed** means that uncertain state prevents the risky action.
+
+Here, a pending review returns HTTP `409 Conflict` instead of exporting candidate data.
+
+```text
+uncertain approval state -> no export
+```
+
+The opposite, "best effort export," would be dangerous because downstream software may treat whatever it receives as trusted.
+
+## 37. Flattening nested data for CSV
+
+JSON naturally supports nested line items. CSV does not.
+
+The project uses one CSV row per line item:
+
+```text
+invoice fields + line item 1
+invoice fields + line item 2
+invoice fields + line item 3
+```
+
+Invoice-level values repeat on each row. This is deliberate: it keeps the file easy to import into spreadsheets, SQL staging tables, and many accounting/data tools.
+
+## 38. Preserve provenance across formats
+
+JSON can represent `field_sources` directly as an object. CSV cannot, so the export includes a serialized `field_sources_json` column plus top-level `result_source` and reviewer metadata.
+
+The lesson is broader than CSV: when converting formats, decide explicitly which semantics must survive the conversion. A technically valid export that silently loses audit information may still be a bad business export.
+
+## Study before Milestone 7
+
+Be able to explain:
+
+- why approval state is separate from serialization format;
+- how the authoritative-result resolver chooses AI vs human-reviewed data;
+- what "fail closed" means in workflow automation;
+- why CSV needs a flattening strategy for line items;
+- why provenance should survive export;
+- the difference between an API read model and the normalized database model beneath it.

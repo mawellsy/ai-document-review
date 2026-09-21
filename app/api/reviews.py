@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -16,12 +15,11 @@ from app.models.extraction import Extraction
 from app.models.review import Review
 from app.schemas.extraction import ExtractionResponse, InvoiceExtractionPayload
 from app.schemas.review import (
-    AuthoritativeInvoiceResponse,
-    AuthoritativeLineItemResponse,
     ReviewDetailResponse,
     ReviewQueueItemResponse,
     ReviewSubmission,
 )
+from app.services.results import build_authoritative_result, payload_dict_from_extraction
 from app.services.validation import InvoiceBusinessValidator
 
 router = APIRouter(prefix="/reviews", tags=["reviews"])
@@ -102,7 +100,7 @@ def submit_review(
         )
 
     corrections = submission.corrections.model_dump(mode="json", exclude_unset=True)
-    merged_data = _payload_dict_from_extraction(extraction)
+    merged_data = payload_dict_from_extraction(extraction)
     merged_data.update(corrections)
 
     try:
@@ -197,7 +195,7 @@ def _queue_item(review: Review, extraction: Extraction) -> ReviewQueueItemRespon
 
 def _detail_response(review: Review, extraction: Extraction) -> ReviewDetailResponse:
     corrections = review.corrected_values_json or {}
-    authoritative = _authoritative_result(extraction, corrections)
+    authoritative = build_authoritative_result(extraction, corrections)
     return ReviewDetailResponse(
         review_id=review.id,
         document_id=review.document_id,
@@ -210,80 +208,4 @@ def _detail_response(review: Review, extraction: Extraction) -> ReviewDetailResp
         corrections=review.corrected_values_json,
         original_extraction=ExtractionResponse.model_validate(extraction),
         authoritative_result=authoritative,
-    )
-
-
-def _payload_dict_from_extraction(extraction: Extraction) -> dict:
-    return {
-        "invoice_number": extraction.invoice_number,
-        "invoice_date": extraction.invoice_date,
-        "vendor_name": extraction.vendor_name,
-        "vendor_address": extraction.vendor_address,
-        "customer_name": extraction.customer_name,
-        "subtotal": float(extraction.subtotal) if extraction.subtotal is not None else None,
-        "tax": float(extraction.tax) if extraction.tax is not None else None,
-        "total": float(extraction.total) if extraction.total is not None else None,
-        "currency": extraction.currency,
-        "due_date": extraction.due_date,
-        "line_items": [
-            {
-                "description": item.description,
-                "quantity": float(item.quantity),
-                "unit_price": float(item.unit_price),
-                "amount": float(item.amount),
-            }
-            for item in extraction.line_items
-        ],
-        "confidence": float(extraction.ai_confidence or Decimal("0")),
-    }
-
-
-def _authoritative_result(
-    extraction: Extraction,
-    corrections: dict,
-) -> AuthoritativeInvoiceResponse:
-    original = _payload_dict_from_extraction(extraction)
-    merged = {**original, **corrections}
-    fields = (
-        "invoice_number",
-        "invoice_date",
-        "vendor_name",
-        "vendor_address",
-        "customer_name",
-        "subtotal",
-        "tax",
-        "total",
-        "currency",
-        "due_date",
-        "line_items",
-    )
-    sources = {field: ("human" if field in corrections else "ai") for field in fields}
-
-    line_items = [
-        AuthoritativeLineItemResponse(
-            description=item["description"],
-            quantity=Decimal(str(item["quantity"])),
-            unit_price=Decimal(str(item["unit_price"])).quantize(Decimal("0.01")),
-            amount=Decimal(str(item["amount"])).quantize(Decimal("0.01")),
-        )
-        for item in merged["line_items"]
-    ]
-
-    def money(name: str) -> Decimal | None:
-        value = merged[name]
-        return Decimal(str(value)).quantize(Decimal("0.01")) if value is not None else None
-
-    return AuthoritativeInvoiceResponse(
-        invoice_number=merged["invoice_number"],
-        invoice_date=merged["invoice_date"],
-        vendor_name=merged["vendor_name"],
-        vendor_address=merged["vendor_address"],
-        customer_name=merged["customer_name"],
-        subtotal=money("subtotal"),
-        tax=money("tax"),
-        total=money("total"),
-        currency=merged["currency"],
-        due_date=merged["due_date"],
-        line_items=line_items,
-        field_sources=sources,
     )

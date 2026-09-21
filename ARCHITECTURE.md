@@ -15,7 +15,7 @@ flowchart LR
     B[InvoiceBusinessValidator]
     R[Pending Review Queue]
     H[Human Reviewer]
-    A[Authoritative Result]
+    A[Authoritative Result Resolver]
     X[JSON / CSV / API]
 
     U --> API --> V --> S
@@ -27,7 +27,7 @@ flowchart LR
     H -->|confirm / correct| B
     B -->|human-reviewed pass| DB
     DB --> A
-    A -. Milestone 6 .-> X
+    A --> X
 ```
 
 ## Milestone 5 review boundary
@@ -50,6 +50,27 @@ deterministic business validation
                         └── pass -> review completed
                                    document status: reviewed
 ```
+
+
+## Milestone 6 export boundary
+
+```text
+current document state
+      ↓
+latest extraction + review context
+      ↓
+Authoritative Result Resolver
+      ├── validated -> AI values are authoritative
+      ├── reviewed  -> AI values + human correction overlay
+      └── any other state -> HTTP 409, do not export
+      ↓
+normalized final result
+      ├── GET /documents/{id}/result
+      ├── JSON download
+      └── CSV download
+```
+
+The export layer does not recalculate business decisions. It resolves the already-approved record and serializes it for downstream use. This keeps workflow approval separate from transport format.
 
 ## Candidate vs authoritative record
 
@@ -93,6 +114,8 @@ This preserves traceability without duplicating every unchanged field in a secon
 | InvoiceBusinessValidator | Apply deterministic arithmetic, required-field, date, currency, and confidence rules |
 | Review API | List pending work, show review context, accept human confirmation/corrections |
 | Review schema | Constrain partial correction payloads and expose authoritative values with provenance |
+| Result resolver | Select the exportable authoritative record and fail closed for incomplete workflow states |
+| Result/export API | Expose final API retrieval plus JSON and line-item-oriented CSV downloads |
 | Database | Preserve document metadata, AI candidate data, validation evidence, review audit data, and corrections |
 
 ## Why human corrections are revalidated
@@ -140,4 +163,5 @@ business validation
 - The review is document-level and resolves against the latest extraction rather than storing an explicit `extraction_id` foreign key.
 - The correction overlay is exposed through the API; a dedicated review UI is optional later work.
 - Schema migrations are not yet managed with Alembic; this portfolio stage uses `create_all` for fresh demo databases.
-- Export is Milestone 6.
+- Bulk multi-document export is not implemented; Milestone 6 exports one authoritative document at a time.
+- Webhook completion notification remains optional future work.

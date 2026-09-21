@@ -8,7 +8,7 @@ A fictional company manually copies invoice data into internal systems. Manual e
 
 ## Current scope
 
-**Milestone 5 complete: human review queue and authoritative corrections**
+**Milestone 6 complete: authoritative API retrieval and JSON/CSV export**
 
 Implemented so far:
 
@@ -38,15 +38,19 @@ Implemented so far:
 - immutable original AI extraction alongside persisted human corrections
 - authoritative merged result with per-field `ai` vs `human` provenance
 - reviewer identity and correction timestamp audit fields
+- final authoritative-result API for downstream consumers
+- downloadable JSON export with provenance and review metadata
+- line-item-oriented CSV export suitable for spreadsheets/imports
+- export gating so pending or incomplete documents fail closed
 - mocked AI tests with no live API calls
 - portfolio and learning notes
 
 Not implemented yet:
 
-- JSON/CSV export
 - optional review dashboard UI
+- final portfolio polish, screenshots, demo script, and business-value packaging
 
-Those remain separate milestones so the review workflow stays focused on auditability and correctness before downstream export is added.
+The core backend workflow is now end-to-end: upload, extract, validate, review when needed, and export only authoritative data.
 
 ## Architecture
 
@@ -70,6 +74,9 @@ flowchart TD
     O --> P[Revalidate Corrected Result]
     P -->|PASS| Q[reviewed]
     Q --> R[(Persisted Correction Overlay)]
+    K --> S[Authoritative Result Resolver]
+    R --> S
+    S --> T[API / JSON / CSV]
 ```
 
 ### Trust boundary
@@ -106,7 +113,8 @@ ai-document-review-pipeline/
 │   ├── api/
 │   │   ├── documents.py
 │   │   ├── extractions.py
-│   │   └── reviews.py
+│   │   ├── reviews.py
+│   │   └── results.py
 │   ├── core/
 │   │   └── config.py
 │   ├── db/
@@ -114,11 +122,13 @@ ai-document-review-pipeline/
 │   ├── schemas/
 │   │   ├── document.py
 │   │   ├── extraction.py
-│   │   └── review.py
+│   │   ├── review.py
+│   │   └── result.py
 │   ├── services/
 │   │   ├── storage.py
 │   │   ├── extraction.py
-│   │   └── validation.py
+│   │   ├── validation.py
+│   │   └── results.py
 │   └── main.py
 ├── sample_invoices/
 ├── scripts/
@@ -229,6 +239,35 @@ curl -X POST \
 
 An empty `corrections` object means the human reviewed the invoice and confirmed the AI values as-is. Human-corrected data is run through business validation again. AI confidence is not rechecked after a human decision because confidence is a model-routing signal, not a property of the human-confirmed record.
 
+### 7. Retrieve the final authoritative result
+
+```bash
+curl \
+  http://127.0.0.1:8000/documents/<DOCUMENT_ID>/result
+```
+
+This endpoint is the stable downstream API view. It exports only documents whose current workflow state is `validated` or `reviewed`. A pending review returns HTTP `409` rather than leaking an unapproved candidate downstream.
+
+The response includes `result_source` (`ai_validated` or `human_reviewed`), review metadata when applicable, and the authoritative invoice with field-level provenance.
+
+### 8. Download JSON
+
+```bash
+curl -OJ \
+  http://127.0.0.1:8000/documents/<DOCUMENT_ID>/exports/json
+```
+
+The JSON export preserves the same authoritative structure and provenance as the API result.
+
+### 9. Download CSV
+
+```bash
+curl -OJ \
+  http://127.0.0.1:8000/documents/<DOCUMENT_ID>/exports/csv
+```
+
+CSV uses one row per line item while repeating invoice-level fields. It also includes `result_source`, reviewer metadata, and a serialized `field_sources_json` column so provenance is not lost when data leaves the API.
+
 ## Authoritative-record strategy
 
 The project deliberately does **not** overwrite the original `Extraction` row. Instead:
@@ -331,25 +370,23 @@ http://127.0.0.1:8000/docs
 pytest -q
 ```
 
-Milestone 5 adds tests for:
+Milestone 6 adds tests for:
 
-- automatic creation of pending reviews for flagged invoices;
-- queue filtering by review status;
-- review detail with original AI values and structured reasons;
-- partial human corrections becoming authoritative;
-- preservation of the original AI extraction after correction;
-- per-field `ai`/`human` provenance;
-- persistence of reviewer and correction timestamp;
-- rejection of human corrections that still violate business rules;
-- confirm-as-is review for low-confidence but otherwise valid invoices;
-- prevention of duplicate review completion.
+- validated AI results becoming immediately retrievable as authoritative data;
+- pending-review documents being blocked from result/export endpoints;
+- reviewed human corrections appearing in the final result with provenance;
+- JSON download headers and authoritative payload content;
+- CSV export with one row per line item;
+- preservation of human-vs-AI provenance in CSV;
+- unknown-document `404` handling;
+- incomplete-document `409` handling.
 
 The suite still uses mocked AI responses, so automated tests do not call a live provider.
 
 ## Milestone boundary
 
-Milestone 5 answers:
+Milestone 6 answers:
 
-> Can a human review or correct flagged documents, can the system revalidate that decision, and can downstream consumers distinguish original AI values from authoritative human-reviewed values?
+> Can downstream systems retrieve or export only the final authoritative invoice, regardless of whether it was auto-validated or human-reviewed, without losing provenance?
 
-Milestone 6 will add JSON/CSV export of the final authoritative information.
+Milestone 7 is portfolio polish: professional case-study documentation, screenshots, demo script, business-value framing, and final presentation readiness.
