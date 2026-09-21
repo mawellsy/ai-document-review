@@ -10,3 +10,6 @@ __pycache__/
 # Local data
 *.db
 uploads/
+
+# macOS
+.DS_Store
