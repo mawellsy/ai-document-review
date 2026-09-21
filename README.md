@@ -52,6 +52,18 @@ deterministic business rules
 - mocks the AI provider in automated tests so the suite is deterministic and does not spend API credits;
 - keeps the architecture intentionally small enough to explain to a client in a few minutes.
 
+## Tech stack
+
+- Python 3.12
+- FastAPI
+- Pydantic
+- SQLAlchemy
+- SQLite
+- OpenAI structured output
+- pytest
+- REST / JSON
+- Git
+
 ## Visual evidence
 
 ### Synthetic input invoice
