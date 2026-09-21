@@ -340,3 +340,55 @@ Why: this shape is easy to inspect in a spreadsheet and easy to load into a flat
 - Milestone 5: complete
 - Milestone 6: complete
 - Milestone 7: next (portfolio polish)
+
+## Milestone 7 additions: portfolio polish
+
+### Final portfolio assets
+
+- professional README with the complete business story and architecture;
+- visual architecture diagram in SVG and PNG formats;
+- synthetic invoice visual for the portfolio gallery;
+- passing-test visual;
+- dedicated case study with an explicitly labeled business-value model;
+- two-minute demo script;
+- sample extracted JSON, reviewed authoritative JSON, and CSV output;
+- screenshot guidance for the two strongest live API moments;
+- demo helper script;
+- version bumped to 1.0.0 for the completed portfolio backend.
+
+### Portfolio positioning
+
+The strongest client-facing message is not "I connected an LLM to an invoice." It is:
+
+> I build AI workflows with validation, exception handling, human review, auditability, and safe downstream outputs.
+
+That framing demonstrates business automation engineering rather than prompt experimentation.
+
+### Three-minute demo sequence
+
+1. show the architecture image and explain the trust boundary;
+2. upload the synthetic invoice through FastAPI;
+3. run extraction and show typed data;
+4. show a validation failure routing to human review;
+5. correct one field and show provenance;
+6. retrieve/export the authoritative result;
+7. finish on the passing automated test suite.
+
+### Proposal talking points
+
+- "I separate probabilistic AI extraction from deterministic business rules."
+- "Uncertain documents are routed to review instead of being discarded or silently accepted."
+- "Human corrections do not overwrite the original AI record, so the workflow remains auditable."
+- "Only validated or reviewed records are exposed to downstream systems."
+- "The tests mock the model provider, keeping CI deterministic and free of API charges."
+- "The portfolio implementation is intentionally simple enough to deploy and explain, with clear upgrade paths to PostgreSQL, object storage, and authentication."
+
+## Final milestone status
+
+- Milestone 1: complete
+- Milestone 2: complete
+- Milestone 3: complete
+- Milestone 4: complete
+- Milestone 5: complete
+- Milestone 6: complete
+- Milestone 7: complete

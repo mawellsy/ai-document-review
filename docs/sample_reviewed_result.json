@@ -1,0 +1,42 @@
+{
+  "document_id": "demo-document-id",
+  "original_filename": "invoice_needs_review.png",
+  "processing_status": "reviewed",
+  "extraction_id": "demo-extraction-id",
+  "result_source": "human_reviewed",
+  "reviewed_by": "reviewer@example.com",
+  "reviewed_at": "2026-09-21T10:00:00Z",
+  "authoritative_result": {
+    "invoice_number": "INV-2026-002",
+    "invoice_date": "2026-09-16",
+    "vendor_name": "Harbor Industrial Supply",
+    "vendor_address": "44 Dock Road, Harbor City",
+    "customer_name": "Acme Field Services",
+    "subtotal": "200.00",
+    "tax": "10.00",
+    "total": "210.00",
+    "currency": "USD",
+    "due_date": "2026-10-16",
+    "line_items": [
+      {
+        "description": "Safety gloves",
+        "quantity": "10.00",
+        "unit_price": "20.00",
+        "amount": "200.00"
+      }
+    ],
+    "field_sources": {
+      "invoice_number": "ai",
+      "invoice_date": "ai",
+      "vendor_name": "ai",
+      "vendor_address": "ai",
+      "customer_name": "ai",
+      "subtotal": "ai",
+      "tax": "ai",
+      "total": "human",
+      "currency": "ai",
+      "due_date": "ai",
+      "line_items": "ai"
+    }
+  }
+}

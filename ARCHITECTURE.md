@@ -165,3 +165,12 @@ business validation
 - Schema migrations are not yet managed with Alembic; this portfolio stage uses `create_all` for fresh demo databases.
 - Bulk multi-document export is not implemented; Milestone 6 exports one authoritative document at a time.
 - Webhook completion notification remains optional future work.
+
+## Portfolio architecture graphic
+
+The final rendered architecture is available in:
+
+- `docs/architecture.svg` for crisp documentation/README use;
+- `docs/architecture.png` for portfolio galleries and screenshots.
+
+The diagram intentionally emphasizes the trust boundary: AI produces a candidate, deterministic rules decide whether it can pass automatically, humans resolve exceptions, and only the authoritative result is exported.

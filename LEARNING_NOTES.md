@@ -635,3 +635,43 @@ Be able to explain:
 - why CSV needs a flattening strategy for line items;
 - why provenance should survive export;
 - the difference between an API read model and the normalized database model beneath it.
+
+## 39. Portfolio polish is part of engineering
+
+A working system and a demonstrable system are not the same thing.
+
+A strong technical portfolio should make four things obvious within minutes:
+
+1. what business problem exists;
+2. how the architecture solves it;
+3. what reliability controls prevent predictable failures;
+4. what measurable operational value the workflow could create.
+
+The final README, architecture image, sample artifacts, test evidence, and demo script are therefore not decoration. They are the interface between the implementation and a client evaluating whether the implementation is useful.
+
+## 40. Quantified value needs explicit assumptions
+
+Time-savings estimates are models unless measured in production.
+
+For this portfolio, the case-study estimate states its assumptions rather than presenting invented ROI as fact. This is the correct pattern for client work:
+
+```text
+assumption → calculation → estimated value → caveat
+```
+
+That keeps business claims useful without pretending synthetic demo data is production evidence.
+
+## 41. What to be able to explain without notes
+
+Before presenting this project, be able to explain:
+
+- why file signature validation is stronger than trusting MIME headers;
+- why strict Pydantic output is safer than manually parsing loose model JSON;
+- why deterministic business rules belong outside the LLM;
+- why low confidence and invalid arithmetic route to human review;
+- why human corrections are overlays instead of destructive edits;
+- why final exports are blocked until a document is validated or reviewed;
+- why provider calls are mocked in automated tests;
+- what changes would be required for PostgreSQL, object storage, authentication, and multi-user deployment.
+
+If those concepts are clear, you can adapt the same architecture to contracts, receipts, onboarding forms, claims, purchase orders, or other document workflows instead of memorizing one invoice implementation.

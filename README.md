@@ -1,139 +1,211 @@
 # AI Document Extraction & Human Review Pipeline
 
-A portfolio project demonstrating production-style AI document processing with Python, FastAPI, Pydantic, SQLAlchemy, SQLite, structured AI extraction, deterministic business validation, and human-in-the-loop review.
+Production-style portfolio project for invoice processing with **FastAPI, Pydantic, SQLAlchemy, SQLite, multimodal AI extraction, deterministic validation, human review, and authoritative JSON/CSV export**.
 
-## Business problem
+The system is designed around one rule: **AI may interpret a document, but it does not get to silently promote its own output into trusted business data.**
 
-A fictional company manually copies invoice data into internal systems. Manual entry is repetitive, slow, and error-prone. This project automates extraction while preserving human oversight when the AI output is incomplete, low-confidence, or mathematically inconsistent.
+![Architecture](docs/screenshots/architecture.png)
 
-## Current scope
+## What this project solves
 
-**Milestone 6 complete: authoritative API retrieval and JSON/CSV export**
+A fictional operations team receives invoices as PDFs and images and manually keys invoice fields into internal systems. That work is repetitive and error-prone, while a fully autonomous AI workflow would create a different risk: malformed, low-confidence, or mathematically inconsistent output could move downstream without review.
 
-Implemented so far:
-
-- maintainable Python/FastAPI application structure
-- environment-based configuration
-- SQLAlchemy database foundation
-- `Document`, `Extraction`, `LineItem`, and `Review` models
-- synthetic invoice fixtures
-- safe PDF/PNG/JPEG upload and local storage
-- UUID-based document identity
-- upload size and file-signature validation
-- `POST /documents`, `GET /documents/{id}`, and `GET /documents`
-- strict Pydantic schema for AI invoice output
-- OpenAI Responses API adapter for image and PDF inputs
-- structured-output parsing instead of manual JSON parsing
-- configurable retry limit for provider/structured-output failures
-- persisted extraction metadata and line items
-- deterministic invoice business validation
-- configurable confidence and monetary tolerance thresholds
-- ISO 4217 currency-code checking
-- structured validation errors persisted with each extraction
-- automatic `validated` vs `review_required` routing state
-- automatic creation of pending review work for flagged invoices
-- `GET /reviews`, `GET /reviews/{document_id}`, and `POST /reviews/{document_id}`
-- partial human correction overlays plus confirm-as-is review decisions
-- revalidation of human-corrected data before completion
-- immutable original AI extraction alongside persisted human corrections
-- authoritative merged result with per-field `ai` vs `human` provenance
-- reviewer identity and correction timestamp audit fields
-- final authoritative-result API for downstream consumers
-- downloadable JSON export with provenance and review metadata
-- line-item-oriented CSV export suitable for spreadsheets/imports
-- export gating so pending or incomplete documents fail closed
-- mocked AI tests with no live API calls
-- portfolio and learning notes
-
-Not implemented yet:
-
-- optional review dashboard UI
-- final portfolio polish, screenshots, demo script, and business-value packaging
-
-The core backend workflow is now end-to-end: upload, extract, validate, review when needed, and export only authoritative data.
-
-## Architecture
-
-```mermaid
-flowchart TD
-    A[API Client] --> B[POST /documents]
-    B --> C[Upload Validation]
-    C --> D[UUID File Storage]
-    D --> E[(Document Metadata)]
-    E --> F[POST /documents/id/extractions]
-    F --> G[InvoiceExtractor]
-    G --> H[AI Provider]
-    H --> I[Strict Pydantic Schema]
-    I --> J[InvoiceBusinessValidator]
-    J -->|PASS| K[validated]
-    J -->|REVIEW| L[review_required]
-    K --> M[(Extraction + Line Items)]
-    L --> M
-    L --> N[Pending Review]
-    N --> O[Human Confirm / Correct]
-    O --> P[Revalidate Corrected Result]
-    P -->|PASS| Q[reviewed]
-    Q --> R[(Persisted Correction Overlay)]
-    K --> S[Authoritative Result Resolver]
-    R --> S
-    S --> T[API / JSON / CSV]
-```
-
-### Trust boundary
+This pipeline automates the routine path and explicitly routes uncertain cases to a person.
 
 ```text
-untrusted document
-      ↓
-upload validation
-      ↓
-stored document
-      ↓
-probabilistic AI extraction
-      ↓
-strict Pydantic structure validation
-      ↓
-deterministic business validation
-      ├── pass   -> validated
-      └── issues -> review_required -> human review
-                                      ↓
-                         confirm or correct fields
-                                      ↓
-                         deterministic revalidation
-                                      ↓
-                                   reviewed
+PDF / image
+    ↓
+secure upload validation
+    ↓
+AI structured extraction
+    ↓
+Pydantic schema validation
+    ↓
+deterministic business rules
+    ├── PASS   → validated
+    └── REVIEW → human review → reviewed
+                         ↓
+              authoritative result
+                         ↓
+                  API / JSON / CSV
 ```
 
-The model interprets the document. Python decides whether the candidate can be accepted automatically. A human can then confirm or correct flagged data without overwriting the original AI record.
+## Portfolio highlights
+
+- validates file size, extension, MIME metadata, and actual signature bytes before AI processing;
+- uses UUID-based storage names instead of trusting client filenames;
+- requests strict typed invoice output instead of manually parsing loose JSON;
+- separates probabilistic extraction from deterministic arithmetic/date/currency rules;
+- preserves the original AI extraction when a human corrects a value;
+- tracks field-level provenance as `ai` or `human`;
+- blocks final export while a document is unresolved;
+- mocks the AI provider in automated tests so the suite is deterministic and does not spend API credits;
+- keeps the architecture intentionally small enough to explain to a client in a few minutes.
+
+## Visual evidence
+
+### Synthetic input invoice
+
+![Synthetic invoice](docs/screenshots/sample-invoice.png)
+
+### Test suite
+
+![Passing tests](docs/screenshots/test-suite.png)
+
+Additional portfolio material:
+
+- [Case study](docs/CASE_STUDY.md)
+- [Two-minute demo script](docs/DEMO_SCRIPT.md)
+- [Test evidence](docs/TEST_EVIDENCE.md)
+- [Sample AI extraction](docs/sample_extracted_invoice.json)
+- [Sample reviewed authoritative result](docs/sample_reviewed_result.json)
+- [Sample CSV export](docs/sample_export.csv)
+- [Screenshot guide](docs/SCREENSHOT_GUIDE.md)
+- [Detailed architecture notes](ARCHITECTURE.md)
+- [Learning notes](LEARNING_NOTES.md)
+
+## Core API
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /documents` | Upload and validate PDF/PNG/JPEG documents |
+| `GET /documents` | List uploaded documents |
+| `GET /documents/{id}` | Retrieve document metadata |
+| `POST /documents/{id}/extractions` | Run AI extraction and business validation |
+| `GET /documents/{id}/extractions/latest` | Read the latest extraction candidate |
+| `GET /reviews` | List review work |
+| `GET /reviews/{document_id}` | Inspect AI values, review reason, and current authoritative view |
+| `POST /reviews/{document_id}` | Confirm or correct a flagged extraction |
+| `GET /documents/{id}/result` | Retrieve final authoritative data |
+| `GET /documents/{id}/exports/json` | Download authoritative JSON |
+| `GET /documents/{id}/exports/csv` | Download line-item-oriented CSV |
+| `GET /health` | Health check |
+
+Interactive API documentation is available at `/docs` while the application is running.
+
+## Invoice fields
+
+The structured extraction includes:
+
+- invoice number and dates;
+- vendor and customer information;
+- subtotal, tax, total, and ISO currency code;
+- line items with description, quantity, unit price, and amount;
+- AI confidence score.
+
+## Validation rules
+
+Pydantic first verifies structure and types. A separate `InvoiceBusinessValidator` then checks business invariants, including:
+
+- required invoice number/vendor/total/currency fields;
+- `subtotal + tax ≈ total`;
+- line-item sum ≈ subtotal;
+- `quantity × unit_price ≈ amount` per line item;
+- valid ISO 4217 currency codes;
+- sensible invoice/due-date ordering;
+- configurable AI confidence threshold.
+
+Validation failures are stored as structured issues containing a code, field, message, observed value, and expected value. They route the document to review rather than discarding it.
+
+## Human review model
+
+The review layer uses an **overlay**, not destructive editing.
+
+```text
+immutable AI extraction
+        +
+human correction overlay
+        ↓
+authoritative result
+```
+
+If AI extracted `total = 999.00` and a reviewer corrects only `total = 210.00`, the final result uses `210.00`, while the original `999.00` remains available for audit. `field_sources` marks `total` as human and untouched fields as AI.
+
+A reviewer may also submit an empty correction object to confirm a low-confidence extraction as-is.
+
+## Export safety
+
+Only documents in `validated` or `reviewed` state can be exposed as final data. Pending, failed, or unresolved documents return HTTP `409` from the authoritative result/export endpoints.
+
+This prevents an uncertain AI candidate from quietly escaping into downstream accounting or reporting systems, which is the sort of tiny omission that becomes a very expensive meeting later.
+
+## Local setup
+
+Requirements: Python 3.11+.
+
+```bash
+cd ~/Projects/Upwork/ai-document-review
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+python -m scripts.init_db
+uvicorn app.main:app --reload
+```
+
+Open:
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+For live AI extraction, set a document-capable model and API key in `.env`:
+
+```text
+AI_PROVIDER="openai"
+AI_MODEL="<document-capable-model>"
+AI_API_KEY="<your-api-key>"
+```
+
+Never commit the real `.env` file.
+
+## Quick demo
+
+Upload the included synthetic invoice:
+
+```bash
+curl -X POST \
+  -F "file=@sample_invoices/invoice_001.png" \
+  http://127.0.0.1:8000/documents
+```
+
+Or run:
+
+```bash
+./scripts/demo_commands.sh
+```
+
+Then use the returned document ID in `/docs` to run extraction, inspect validation, review if needed, and export the authoritative result. The full presentation sequence is in [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md).
+
+## Tests
+
+```bash
+pytest -q
+```
+
+Current portfolio baseline:
+
+```text
+48 passed
+```
+
+The tests cover upload security, schemas, database structure, mocked AI extraction, retry/failure behavior, deterministic business validation, review workflows, provenance, final result resolution, and export gating.
 
 ## Repository structure
 
 ```text
-ai-document-review-pipeline/
+ai-document-review/
 ├── app/
-│   ├── api/
-│   │   ├── documents.py
-│   │   ├── extractions.py
-│   │   ├── reviews.py
-│   │   └── results.py
-│   ├── core/
-│   │   └── config.py
-│   ├── db/
-│   ├── models/
-│   ├── schemas/
-│   │   ├── document.py
-│   │   ├── extraction.py
-│   │   ├── review.py
-│   │   └── result.py
-│   ├── services/
-│   │   ├── storage.py
-│   │   ├── extraction.py
-│   │   ├── validation.py
-│   │   └── results.py
-│   └── main.py
-├── sample_invoices/
-├── scripts/
-├── storage/uploads/
-├── tests/
+│   ├── api/                 # HTTP routes
+│   ├── core/                # environment configuration
+│   ├── db/                  # engine/session foundation
+│   ├── models/              # SQLAlchemy entities
+│   ├── schemas/             # Pydantic request/response contracts
+│   └── services/            # storage, extraction, validation, result logic
+├── docs/                    # portfolio case study, visuals, samples, demo material
+├── sample_invoices/         # synthetic document fixtures
+├── scripts/                 # database init and demo helper
+├── tests/                   # automated unit/integration tests
 ├── .env.example
 ├── ARCHITECTURE.md
 ├── LEARNING_NOTES.md
@@ -143,250 +215,61 @@ ai-document-review-pipeline/
 └── README.md
 ```
 
-## API workflow
+## Business-value model
 
-### 1. Upload an invoice
+For portfolio demonstration, assume manual entry takes 4 minutes per invoice and the automated workflow averages 30 seconds of human attention per invoice after exception handling/spot checks.
 
-```bash
-curl -X POST \
-  -F "file=@sample_invoices/invoice_001.png" \
-  http://127.0.0.1:8000/documents
-```
+At 1,000 invoices per month, that illustrative model reduces staff effort from roughly **66.7 hours to 8.3 hours**, or about **58.4 hours saved per month**.
 
-### 2. Extract and validate invoice data
+This is an illustrative estimate, not a measured production result. Real savings depend on invoice complexity, review rate, provider latency, and the client's current process. See the [case study](docs/CASE_STUDY.md) for the assumptions.
 
-```bash
-curl -X POST \
-  http://127.0.0.1:8000/documents/<DOCUMENT_ID>/extractions
-```
+## Design choices and tradeoffs
 
-The endpoint now performs two different kinds of validation:
+### SQLite first
 
-1. **Structural validation:** Pydantic checks types, dates, allowed fields, numeric ranges, and line-item shape.
-2. **Business validation:** ordinary Python checks whether the structurally valid data makes business sense.
+SQLite keeps the portfolio demo self-contained. SQLAlchemy keeps the persistence boundary clean enough to move to PostgreSQL later.
 
-A successful extraction therefore does **not** automatically mean the invoice is trusted.
+### Local filesystem first
 
-### 3. Read the latest extraction
+Local storage avoids infrastructure that adds little portfolio value. Production deployment should use object storage such as S3.
 
-```bash
-curl \
-  http://127.0.0.1:8000/documents/<DOCUMENT_ID>/extractions/latest
-```
+### Deterministic rules outside the LLM
 
-The response includes:
+Arithmetic, dates, currencies, and workflow state are ordinary software problems. Delegating them to a language model would add cost and uncertainty without adding value.
 
-```json
-{
-  "review_required": false,
-  "validation_errors": []
-}
-```
+### API-driven review instead of a frontend
 
-An inconsistent invoice can instead return:
+The backend workflow is the portfolio focus. A review dashboard would improve usability but is intentionally left as a future enhancement rather than bloating the first version.
 
-```json
-{
-  "review_required": true,
-  "validation_errors": [
-    {
-      "code": "invoice_total_mismatch",
-      "field": "total",
-      "message": "Subtotal plus tax does not approximately equal total.",
-      "observed": "999.00",
-      "expected": "210.00"
-    }
-  ]
-}
-```
+## Security and limitations
 
-The original AI extraction remains persisted even when review is required. The review workflow stores only the human correction overlay, so the AI candidate remains available for audit.
+Implemented safeguards:
 
-### 4. List the pending review queue
+- environment variables for secrets;
+- synthetic documents only;
+- upload size and format restrictions;
+- file-signature verification;
+- server-generated storage names;
+- no confidential document body logging by design;
+- final-export gating.
 
-```bash
-curl http://127.0.0.1:8000/reviews
-```
+Known limitations:
 
-Use `?status=completed`, `?status=superseded`, or `?status=all` to inspect other review states.
+- no authentication/RBAC;
+- no PostgreSQL/Alembic migration setup yet;
+- local filesystem storage only;
+- no dedicated review UI;
+- no batch processing/export;
+- provider smoke tests are not part of the default offline test suite.
 
-### 5. Inspect one review
+## Portfolio status
 
-```bash
-curl \
-  http://127.0.0.1:8000/reviews/<DOCUMENT_ID>
-```
+**Complete through Milestone 7.**
 
-The detail response contains three distinct views:
-
-- `original_extraction`: immutable AI candidate data;
-- `corrections`: only fields explicitly confirmed as corrections by the reviewer;
-- `authoritative_result`: the merged result clients should use after review, plus `field_sources` showing whether each field came from AI or human input.
-
-### 6. Submit a correction
-
-```bash
-curl -X POST \
-  -H "Content-Type: application/json" \
-  -d '{
-    "corrected_by": "reviewer@example.com",
-    "corrections": {
-      "total": 210.00
-    }
-  }' \
-  http://127.0.0.1:8000/reviews/<DOCUMENT_ID>
-```
-
-An empty `corrections` object means the human reviewed the invoice and confirmed the AI values as-is. Human-corrected data is run through business validation again. AI confidence is not rechecked after a human decision because confidence is a model-routing signal, not a property of the human-confirmed record.
-
-### 7. Retrieve the final authoritative result
-
-```bash
-curl \
-  http://127.0.0.1:8000/documents/<DOCUMENT_ID>/result
-```
-
-This endpoint is the stable downstream API view. It exports only documents whose current workflow state is `validated` or `reviewed`. A pending review returns HTTP `409` rather than leaking an unapproved candidate downstream.
-
-The response includes `result_source` (`ai_validated` or `human_reviewed`), review metadata when applicable, and the authoritative invoice with field-level provenance.
-
-### 8. Download JSON
-
-```bash
-curl -OJ \
-  http://127.0.0.1:8000/documents/<DOCUMENT_ID>/exports/json
-```
-
-The JSON export preserves the same authoritative structure and provenance as the API result.
-
-### 9. Download CSV
-
-```bash
-curl -OJ \
-  http://127.0.0.1:8000/documents/<DOCUMENT_ID>/exports/csv
-```
-
-CSV uses one row per line item while repeating invoice-level fields. It also includes `result_source`, reviewer metadata, and a serialized `field_sources_json` column so provenance is not lost when data leaves the API.
-
-## Authoritative-record strategy
-
-The project deliberately does **not** overwrite the original `Extraction` row. Instead:
+The repository now demonstrates an end-to-end business workflow:
 
 ```text
-immutable AI extraction
-        +
-persisted human correction overlay
-        =
-authoritative reviewed result
+Upload → Extract → Validate → Review exceptions → Export authoritative data
 ```
 
-This keeps both values available for audit while avoiding duplicated copies of unchanged fields. `field_sources` makes provenance explicit at read time.
-
-## Business validation rules
-
-`InvoiceBusinessValidator` currently checks:
-
-- required auto-accept fields are present;
-- at least one line item exists;
-- currency is an assigned transactional ISO 4217 code;
-- AI confidence meets `AI_CONFIDENCE_THRESHOLD`;
-- due date is not earlier than invoice date;
-- `subtotal + tax` approximately equals `total`;
-- each line item's `quantity × unit_price` approximately equals its `amount`;
-- line-item amounts approximately sum to `subtotal`.
-
-Money comparisons use decimal arithmetic and a configurable tolerance instead of exact floating-point equality.
-
-## Processing states
-
-```text
-uploaded
-   ↓
-extracting
-   ├── provider/schema failure -> extraction_failed
-   ↓
-AI candidate extracted
-   ↓
-business validation
-   ├── no issues -> validated
-   └── issues    -> review_required
-                       ↓
-                 pending review
-                       ↓
-              human confirm/correct
-                       ↓
-                 revalidation
-                       ↓
-                    reviewed
-```
-
-A later re-extraction that passes validation can mark an obsolete pending review as `superseded`, preventing stale work from remaining in the default queue.
-
-## Configuration
-
-Copy the example file:
-
-```bash
-cp .env.example .env
-```
-
-Configure as needed:
-
-```text
-DATABASE_URL=sqlite:///./document_review.db
-UPLOAD_DIR=storage/uploads
-MAX_UPLOAD_MB=10
-AI_PROVIDER=openai
-AI_MODEL=<document-capable-model>
-AI_API_KEY=<your-api-key>
-AI_MAX_ATTEMPTS=2
-AI_CONFIDENCE_THRESHOLD=0.80
-AMOUNT_TOLERANCE=0.01
-```
-
-Never commit `.env` or a real API key.
-
-## Local setup
-
-Python 3.11+ is recommended.
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python -m scripts.init_db
-uvicorn app.main:app --reload
-```
-
-Interactive documentation:
-
-```text
-http://127.0.0.1:8000/docs
-```
-
-## Tests
-
-```bash
-pytest -q
-```
-
-Milestone 6 adds tests for:
-
-- validated AI results becoming immediately retrievable as authoritative data;
-- pending-review documents being blocked from result/export endpoints;
-- reviewed human corrections appearing in the final result with provenance;
-- JSON download headers and authoritative payload content;
-- CSV export with one row per line item;
-- preservation of human-vs-AI provenance in CSV;
-- unknown-document `404` handling;
-- incomplete-document `409` handling.
-
-The suite still uses mocked AI responses, so automated tests do not call a live provider.
-
-## Milestone boundary
-
-Milestone 6 answers:
-
-> Can downstream systems retrieve or export only the final authoritative invoice, regardless of whether it was auto-validated or human-reviewed, without losing provenance?
-
-Milestone 7 is portfolio polish: professional case-study documentation, screenshots, demo script, business-value framing, and final presentation readiness.
+The project is built for freelance/Upwork demonstrations: recognizable business problem, explainable architecture, visible reliability controls, failure-path tests, and a short demo path rather than a feature-count contest.

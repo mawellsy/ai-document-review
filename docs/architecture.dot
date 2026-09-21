@@ -1,0 +1,27 @@
+digraph G {
+  graph [rankdir=TB, bgcolor="white", pad=0.3, nodesep=0.55, ranksep=0.75, fontname="Helvetica"];
+  node [shape=box, style="rounded,filled", fillcolor="#F8FAFC", color="#475569", fontname="Helvetica", fontsize=11, margin="0.12,0.08"];
+  edge [color="#64748B", fontname="Helvetica", fontsize=10, arrowsize=0.7];
+
+  upload [label="1. Upload\nPDF / PNG / JPEG"];
+  validate [label="2. File Validation\nsize • signature • filename"];
+  store [label="3. Document Storage\nUUID + metadata"];
+  ai [label="4. AI Extraction\nstrict Pydantic output"];
+  rules [label="5. Business Validation\narithmetic • dates • currency • confidence"];
+  pass [label="Validated", fillcolor="#ECFDF5", color="#059669"];
+  review [label="Human Review Queue", fillcolor="#FFF7ED", color="#EA580C"];
+  corrected [label="Reviewed\ncorrection overlay + provenance", fillcolor="#EFF6FF", color="#2563EB"];
+  result [label="6. Authoritative Result\nAPI • JSON • CSV", fillcolor="#F5F3FF", color="#7C3AED"];
+  db [shape=cylinder, label="SQLite / SQLAlchemy\nDocument • Extraction • Review • LineItem", fillcolor="#F8FAFC"];
+
+  upload -> validate -> store -> ai -> rules;
+  store -> db [dir=both, label="metadata"];
+  ai -> db [label="candidate"];
+  rules -> pass [label="PASS"];
+  rules -> review [label="REVIEW"];
+  review -> corrected [label="confirm / correct"];
+  corrected -> db [label="audit trail"];
+  pass -> result;
+  corrected -> result;
+  result -> db [dir=back, label="resolve"];
+}

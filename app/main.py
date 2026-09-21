@@ -7,7 +7,7 @@ from app.api.results import router as results_router
 from app.core.config import get_settings
 
 settings = get_settings()
-app = FastAPI(title=settings.app_name, version="0.6.0")
+app = FastAPI(title=settings.app_name, version="1.0.0")
 app.include_router(documents_router)
 app.include_router(extractions_router)
 app.include_router(reviews_router)
