@@ -12,7 +12,7 @@ digraph G {
   review [label="Human Review Queue", fillcolor="#FFF7ED", color="#EA580C"];
   corrected [label="Reviewed\ncorrection overlay + provenance", fillcolor="#EFF6FF", color="#2563EB"];
   result [label="6. Authoritative Result\nAPI • JSON • CSV", fillcolor="#F5F3FF", color="#7C3AED"];
-  db [shape=cylinder, label="SQLite / SQLAlchemy\nDocument • Extraction • Review • LineItem", fillcolor="#F8FAFC"];
+  db [shape=cylinder, label="PostgreSQL (prod) • SQLite (dev/test)\nSQLAlchemy + Alembic\nDocument • Extraction • Review • LineItem", fillcolor="#F8FAFC"];
 
   upload -> validate -> store -> ai -> rules;
   store -> db [dir=both, label="metadata"];

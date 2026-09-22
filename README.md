@@ -1,6 +1,6 @@
 # AI Document Extraction & Human Review Pipeline
 
-Production-style portfolio project for invoice processing with **FastAPI, Pydantic, SQLAlchemy, SQLite, multimodal AI extraction, deterministic validation, human review, and authoritative JSON/CSV export**.
+Production-style portfolio project for invoice processing with **FastAPI, Pydantic, SQLAlchemy, PostgreSQL production persistence, Alembic migrations, SQLite local/test support, multimodal AI extraction, deterministic validation, human review, and authoritative JSON/CSV export**.
 
 The system is designed around one rule: **AI may interpret a document, but it does not get to silently promote its own output into trusted business data.**
 
@@ -8,9 +8,9 @@ The system is designed around one rule: **AI may interpret a document, but it do
 
 ## Project status
 
-**Complete portfolio implementation.**
+**Complete Phase 1 portfolio implementation; Phase 2 production upgrades are in progress.**
 
-The end-to-end workflow is implemented and tested:
+Milestone 8 is complete: PostgreSQL production configuration and reproducible Alembic migrations now sit underneath the existing end-to-end workflow:
 
 ```text
 Upload → AI extraction → deterministic validation → human review when required → authoritative JSON/CSV export
@@ -58,7 +58,9 @@ deterministic business rules
 - FastAPI
 - Pydantic
 - SQLAlchemy
-- SQLite
+- PostgreSQL
+- Alembic
+- SQLite for local development/tests
 - OpenAI structured output
 - pytest
 - REST / JSON
@@ -181,6 +183,38 @@ AI_API_KEY="<your-api-key>"
 
 Never commit the real `.env` file.
 
+### PostgreSQL production configuration
+
+Local development still defaults to SQLite so the portfolio remains easy to run. Production mode requires PostgreSQL and refuses to start with a SQLite `DATABASE_URL`. Point the application at an existing PostgreSQL server with environment variables such as:
+
+```text
+APP_ENV="production"
+DATABASE_URL="postgresql+psycopg://document_review:<password>@<host>:5432/document_review"
+```
+
+Then apply the schema before starting the API:
+
+```bash
+alembic upgrade head
+```
+
+`python -m scripts.init_db` is retained as a convenience command and now runs the same Alembic upgrade instead of calling `Base.metadata.create_all()`.
+
+### Database migrations
+
+Alembic is the schema-change authority for deployed databases. Useful commands:
+
+```bash
+alembic current
+alembic upgrade head
+alembic downgrade -1
+alembic revision --autogenerate -m "describe schema change"
+```
+
+The initial migration creates the existing `documents`, `extractions`, `reviews`, and `line_items` model without changing the business workflow. SQLite remains appropriate for fast local/tests; PostgreSQL is the required production backend.
+
+Existing Phase 1 SQLite demo databases were created before Alembic tracked revisions. This upgrade does not auto-stamp an existing database. If the local database contains only disposable synthetic demo data, rename or remove `document_review.db` and run `python -m scripts.init_db` to create a fresh migration-managed database. If existing data matters, back it up and verify the schema before using `alembic stamp head`.
+
 ## Quick demo
 
 Upload the included synthetic invoice:
@@ -208,10 +242,10 @@ pytest -q
 Current portfolio baseline:
 
 ```text
-48 passed
+52 passed
 ```
 
-The tests cover upload security, schemas, database structure, mocked AI extraction, retry/failure behavior, deterministic business validation, review workflows, provenance, final result resolution, and export gating.
+The tests cover upload security, schemas, ORM database structure, Alembic upgrade/downgrade behavior, PostgreSQL production configuration guards, mocked AI extraction, retry/failure behavior, deterministic business validation, review workflows, provenance, final result resolution, and export gating.
 
 ## Repository structure
 
@@ -224,11 +258,13 @@ ai-document-review/
 │   ├── models/              # SQLAlchemy entities
 │   ├── schemas/             # Pydantic request/response contracts
 │   └── services/            # storage, extraction, validation, result logic
+├── migrations/              # Alembic environment and ordered schema revisions
 ├── docs/                    # portfolio case study, visuals, samples, demo material
 ├── sample_invoices/         # synthetic document fixtures
-├── scripts/                 # database init and demo helper
+├── scripts/                 # migration-backed database init and demo helper
 ├── tests/                   # automated unit/integration tests
 ├── .env.example
+├── alembic.ini
 ├── ARCHITECTURE.md
 ├── LEARNING_NOTES.md
 ├── PORTFOLIO_NOTES.md
@@ -247,9 +283,9 @@ This is an illustrative estimate, not a measured production result. Real savings
 
 ## Design choices and tradeoffs
 
-### SQLite first
+### PostgreSQL in production, SQLite for local/tests
 
-SQLite keeps the portfolio demo self-contained. SQLAlchemy keeps the persistence boundary clean enough to move to PostgreSQL later.
+PostgreSQL is now the required production database. SQLite remains the default for local development and the automated test suite because it keeps feedback fast and the demo self-contained. SQLAlchemy provides the shared ORM boundary, while Alembic owns reproducible schema evolution.
 
 ### Local filesystem first
 
@@ -278,7 +314,7 @@ Implemented safeguards:
 Known limitations:
 
 - no authentication/RBAC;
-- no PostgreSQL/Alembic migration setup yet;
+- PostgreSQL is supported and required for `APP_ENV=production`, but Dockerized PostgreSQL setup is deferred to Phase 2 Milestone 9;
 - local filesystem storage only;
 - no dedicated review UI;
 - no batch processing/export;
@@ -286,9 +322,9 @@ Known limitations:
 
 ## Portfolio status
 
-**Complete portfolio implementation.**
+**Complete Phase 1 portfolio implementation; Phase 2 Milestone 8 complete.**
 
-The repository demonstrates the complete end-to-end workflow:
+The repository preserves the complete end-to-end workflow while adding PostgreSQL production persistence and Alembic schema migrations:
 
 ```text
 Upload → AI extraction → deterministic validation → human review when required → authoritative JSON/CSV export

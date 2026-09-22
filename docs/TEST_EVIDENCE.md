@@ -1,17 +1,18 @@
 # Test Evidence
 
-Milestone 6 baseline test run:
+Phase 2 Milestone 8 verification:
 
 ```text
-48 passed, 1 warning
+52 passed
 ```
-
-The warning originates from Starlette's test client dependency and does not represent an application failure.
 
 The suite covers:
 
 - upload validation and safe storage;
-- database schema creation;
+- ORM database schema creation;
+- Alembic upgrade/downgrade behavior;
+- PostgreSQL production-configuration guardrails;
+- SQLite foreign-key enforcement used by local/tests;
 - strict extraction schemas;
 - AI-service retry/failure handling with mocked provider responses;
 - deterministic invoice business rules;
@@ -24,6 +25,8 @@ The suite covers:
 For a fresh verification:
 
 ```bash
-cd ~/Projects/Upwork/ai-document-review
+cd ai-document-review
 pytest -q
 ```
+
+The portfolio screenshot in `docs/screenshots/test-suite.png` captures the completed Phase 1 suite; the text evidence above tracks the current Phase 2 test count.

@@ -72,6 +72,23 @@ normalized final result
 
 The export layer does not recalculate business decisions. It resolves the already-approved record and serializes it for downstream use. This keeps workflow approval separate from transport format.
 
+## Phase 2 Milestone 8 database boundary
+
+```text
+FastAPI / service layer
+        ↓
+SQLAlchemy ORM models
+        ↓
+Alembic migration history
+        ↓
+├── PostgreSQL  production
+└── SQLite      local development / tests
+```
+
+The ORM model remains the application-facing persistence contract. Alembic now owns deployed schema evolution, and the initial migration reproduces the existing `Document`, `Extraction`, `Review`, and `LineItem` tables. `APP_ENV=production` requires a PostgreSQL URL so a production deployment cannot silently fall back to the local SQLite database.
+
+Future model changes should be expressed as explicit migration revisions rather than by calling `Base.metadata.create_all()` against an already-deployed database.
+
 ## Candidate vs authoritative record
 
 The original AI extraction is immutable. Human review stores only the fields the reviewer changed.
@@ -162,7 +179,7 @@ business validation
 
 - The review is document-level and resolves against the latest extraction rather than storing an explicit `extraction_id` foreign key.
 - The correction overlay is exposed through the API; a dedicated review UI is optional later work.
-- Schema migrations are not yet managed with Alembic; this portfolio stage uses `create_all` for fresh demo databases.
+- PostgreSQL is the production persistence target, but containerized database provisioning is deferred to Phase 2 Milestone 9.
 - Bulk multi-document export is not implemented; Milestone 6 exports one authoritative document at a time.
 - Webhook completion notification remains optional future work.
 

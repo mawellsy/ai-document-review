@@ -675,3 +675,68 @@ Before presenting this project, be able to explain:
 - what changes would be required for PostgreSQL, object storage, authentication, and multi-user deployment.
 
 If those concepts are clear, you can adapt the same architecture to contracts, receipts, onboarding forms, claims, purchase orders, or other document workflows instead of memorizing one invoice implementation.
+
+## 42. Phase 2 Milestone 8: ORM models and migrations solve different problems
+
+SQLAlchemy models describe the schema the application expects at runtime. Alembic migrations describe how a real database moves from one schema version to the next.
+
+That distinction matters once a system has persistent data. `Base.metadata.create_all()` is useful for disposable test databases, but it does not provide an ordered, reviewable history of production schema changes.
+
+```text
+ORM model = desired application schema
+migration  = explicit transition between schema versions
+```
+
+The project now keeps `create_all()` in tests for fast isolated databases, while deployed database initialization uses `alembic upgrade head`.
+
+## 43. PostgreSQL production vs SQLite development
+
+SQLite is excellent for a small local demo and fast tests because it requires no separate database server. PostgreSQL is a more realistic production target for concurrent clients, operational tooling, deployment platforms, and future schema evolution.
+
+The application therefore supports both through the same SQLAlchemy models:
+
+```text
+local/tests -> SQLite
+production  -> PostgreSQL + psycopg
+```
+
+`APP_ENV=production` rejects a SQLite URL. This is a guardrail against accidentally deploying the application with the development database configuration.
+
+## 44. Alembic revision history
+
+The `alembic_version` table records which migration revision a database has reached. `alembic upgrade head` applies missing revisions in order; `alembic downgrade -1` rolls back one revision when the migration supports it.
+
+The initial `0001_initial_schema` migration creates the same four business tables already used by the application. Future changes should add new revisions instead of editing old revisions that may already have run elsewhere.
+
+A database created before Alembic existed has no revision history. Automatically stamping such a database would be risky because Alembic would trust the stamp even if the actual schema differed. For this synthetic portfolio project, recreating the local SQLite database is the safest default; preserving real data would require a verified baseline/migration plan.
+
+## 45. Constraint naming and schema evolution
+
+The SQLAlchemy metadata now has deterministic naming conventions for primary keys, foreign keys, unique constraints, indexes, and named checks.
+
+Stable constraint names make future migrations easier to reason about, especially on PostgreSQL where altering or dropping a constraint usually requires referring to it by name.
+
+## 46. Transactions and migrations
+
+Application transactions protect business operations such as persisting an extraction or human review. Migration transactions protect schema changes where the database supports transactional DDL.
+
+These are related but separate concerns:
+
+```text
+application transaction -> preserve business-data consistency
+migration transaction   -> preserve schema-change consistency
+```
+
+SQLite and PostgreSQL do not behave identically for every DDL operation, which is one reason migration code must be tested rather than assumed portable.
+
+## Study before Phase 2 Milestone 9
+
+Be able to explain:
+
+- why `create_all()` is not a production migration strategy;
+- what the `alembic_version` table represents;
+- the difference between `alembic upgrade head` and autogenerating a new revision;
+- why PostgreSQL is used for production while SQLite remains useful for tests;
+- why production configuration explicitly rejects SQLite;
+- why deterministic constraint names make future schema changes safer;
+- how database migrations differ from normal application transactions.

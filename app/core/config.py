@@ -1,8 +1,9 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
 
 
 class Settings(BaseSettings):
@@ -25,6 +26,15 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @model_validator(mode="after")
+    def require_postgresql_in_production(self) -> "Settings":
+        """Prevent accidental production startup against the development SQLite database."""
+        if self.app_env.lower() == "production":
+            backend = make_url(self.database_url).get_backend_name()
+            if backend != "postgresql":
+                raise ValueError("APP_ENV=production requires a PostgreSQL DATABASE_URL.")
+        return self
 
 
 @lru_cache

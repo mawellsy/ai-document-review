@@ -392,3 +392,57 @@ That framing demonstrates business automation engineering rather than prompt exp
 - Milestone 5: complete
 - Milestone 6: complete
 - Milestone 7: complete
+
+## Phase 2 Milestone 8 additions: PostgreSQL + Alembic migrations
+
+### Problems solved
+
+- production persistence is no longer limited to a local SQLite file;
+- database schema changes now have an explicit, reproducible migration history;
+- production mode cannot silently start against SQLite;
+- the existing four-table data model can be created consistently on PostgreSQL or a fresh SQLite development/test database;
+- database initialization now upgrades through Alembic rather than treating `create_all()` as a deployment strategy.
+
+### Skills demonstrated
+
+- PostgreSQL-ready SQLAlchemy configuration
+- psycopg database-driver configuration
+- Alembic migration setup and revision management
+- schema upgrade/downgrade testing
+- production configuration guardrails
+- deterministic database constraint naming
+- separation of ORM metadata from deployed schema evolution
+
+### Architectural decisions
+
+#### Keep SQLite for local development and tests
+
+Why: it keeps the portfolio fast and self-contained while PostgreSQL handles the production persistence role. The application code continues to depend on SQLAlchemy rather than database-specific query logic.
+
+#### Require PostgreSQL in production mode
+
+Why: a production deployment should fail early if its database configuration accidentally points at the local SQLite fallback.
+
+#### Make Alembic the deployed-schema authority
+
+Why: production databases need ordered, reviewable schema transitions. `Base.metadata.create_all()` remains useful for disposable unit-test databases, not for evolving a persistent deployed schema.
+
+Existing pre-Alembic SQLite demo databases are not stamped automatically. That avoids falsely declaring an unknown schema current; disposable synthetic demo databases can be recreated, while real data would require an explicit verified migration plan.
+
+#### Preserve the existing business model
+
+Why: Milestone 8 is infrastructure hardening, not a workflow rewrite. `Document`, `Extraction`, `Review`, and `LineItem` retain the same conceptual relationships and the API behavior remains unchanged.
+
+### Demo moments added
+
+- show `.env.example` with separate local SQLite and production PostgreSQL configuration;
+- run `alembic upgrade head` and show the `0001_initial_schema` revision applied;
+- run `alembic current` to demonstrate schema version tracking;
+- show the migration test creating and downgrading the complete schema;
+- explain why the application still uses SQLite in fast tests while production requires PostgreSQL.
+
+## Phase 2 milestone status
+
+- Milestones 1-7: complete (Phase 1)
+- Milestone 8: complete (PostgreSQL + Alembic migrations)
+- Milestone 9: next (Docker Compose)
